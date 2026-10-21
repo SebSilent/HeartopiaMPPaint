@@ -1,0 +1,210 @@
+{
+  "source": "https://zerochansy.github.io/Heartopia-Painting-Tools/assets/color/color.svg",
+  "totalGroups": 13,
+  "totalColors": 125,
+  "groups": [
+    {
+      "group": 1,
+      "mainColor": "#000000",
+      "colors": [
+        "#051616",
+        "#414545",
+        "#808282",
+        "#bebfbf",
+        "#feffff"
+      ]
+    },
+    {
+      "group": 2,
+      "mainColor": "#ea696d",
+      "colors": [
+        "#cf354d",
+        "#ee6f72",
+        "#a6263d",
+        "#f5aca6",
+        "#c98483",
+        "#a35d5e",
+        "#682f39",
+        "#e7d5d5",
+        "#c0acab",
+        "#755e5e"
+      ]
+    },
+    {
+      "group": 3,
+      "mainColor": "#f77f54",
+      "colors": [
+        "#e95e2b",
+        "#f98358",
+        "#ab4226",
+        "#feba9f",
+        "#d9937c",
+        "#af6c58",
+        "#753b31",
+        "#e9d5d0",
+        "#c1aca6",
+        "#755e59"
+      ]
+    },
+    {
+      "group": 4,
+      "mainColor": "#fdab34",
+      "colors": [
+        "#f49e16",
+        "#feae3b",
+        "#b16f16",
+        "#fece92",
+        "#daa76d",
+        "#b3814b",
+        "#795126",
+        "#f5e4ce",
+        "#cdbca9",
+        "#806f5e"
+      ]
+    },
+    {
+      "group": 5,
+      "mainColor": "#f7d230",
+      "colors": [
+        "#edca16",
+        "#f9d838",
+        "#b39416",
+        "#f9e690",
+        "#d4be6f",
+        "#ab954b",
+        "#756326",
+        "#eee7c7",
+        "#c6bfa2",
+        "#787259"
+      ]
+    },
+    {
+      "group": 6,
+      "mainColor": "#b5c728",
+      "colors": [
+        "#a7bb16",
+        "#b6c833",
+        "#758616",
+        "#d8df93",
+        "#acb66c",
+        "#85914b",
+        "#535e2b",
+        "#e6e9c7",
+        "#bcc2a3",
+        "#6e745d"
+      ]
+    },
+    {
+      "group": 7,
+      "mainColor": "#40b678",
+      "colors": [
+        "#05a25d",
+        "#41b97b",
+        "#057447",
+        "#9cdaad",
+        "#76b28b",
+        "#4f8969",
+        "#245640",
+        "#c3e0cc",
+        "#9db7a6",
+        "#53695d"
+      ]
+    },
+    {
+      "group": 8,
+      "mainColor": "#01aa9f",
+      "colors": [
+        "#058781",
+        "#05aba0",
+        "#056966",
+        "#7ecdc2",
+        "#55a49c",
+        "#2b7e78",
+        "#054b4b",
+        "#bee0da",
+        "#98b7b2",
+        "#4e6b66"
+      ]
+    },
+    {
+      "group": 9,
+      "mainColor": "#0094b5",
+      "colors": [
+        "#05729c",
+        "#0599ba",
+        "#055878",
+        "#79bbca",
+        "#5193a5",
+        "#246d7f",
+        "#05495b",
+        "#c6dde2",
+        "#9eb5ba",
+        "#4f676f"
+      ]
+    },
+    {
+      "group": 10,
+      "mainColor": "#2981c0",
+      "colors": [
+        "#055ea6",
+        "#2b83c1",
+        "#054782",
+        "#83a8c9",
+        "#5d80a1",
+        "#365b7f",
+        "#193b56",
+        "#c1cdd5",
+        "#9ba6b0",
+        "#4c5967"
+      ]
+    },
+    {
+      "group": 11,
+      "mainColor": "#7474bb",
+      "colors": [
+        "#534da1",
+        "#7577bd",
+        "#3e387e",
+        "#a2a0c7",
+        "#787aa1",
+        "#55567e",
+        "#333555",
+        "#c9cad5",
+        "#a2a3b0",
+        "#565869"
+      ]
+    },
+    {
+      "group": 12,
+      "mainColor": "#a164a7",
+      "colors": [
+        "#813d8b",
+        "#a167a9",
+        "#602b6c",
+        "#b89bb9",
+        "#907395",
+        "#6c4d73",
+        "#432e4b",
+        "#cfc9d1",
+        "#aba1ac",
+        "#605664"
+      ]
+    },
+    {
+      "group": 13,
+      "mainColor": "#cd638b",
+      "colors": [
+        "#ad356f",
+        "#cf6b8f",
+        "#862658",
+        "#d9a1b4",
+        "#b3798b",
+        "#8b5367",
+        "#60354b",
+        "#e4d5da",
+        "#bcadb1",
+        "#725e66"
+      ]
+    }
+  ]
+}

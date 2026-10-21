@@ -1,0 +1,24 @@
+{
+  "name": "heartopia-mp-paint",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Browser multiplayer pixel painting game using Heartopia's palette and canvas sizes",
+  "scripts": {
+    "test": "node --test",
+    "dev": "node tools/serve.cjs",
+    "relay": "node server/relay.js",
+    "palette": "node tools/build_palette_module.cjs"
+  },
+  "license": "UNLICENSED",
+  "engines": {
+    "node": ">=18"
+  },
+  "comments": {
+    "ws": "Only needed for the optional relay server and its tests. The website itself has no build step and no dependencies.",
+    "run": "node server/relay.js must be run from the repo root - it imports the shared canvas model from assets/js/."
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

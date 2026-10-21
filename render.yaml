@@ -1,0 +1,18 @@
+# Optional. Only needed if you want relay rooms instead of the default
+# serverless peer-to-peer rooms. The website itself is hosted on GitHub Pages.
+#
+# Deploy: https://render.com/dashboard -> New -> Blueprint -> this repo.
+services:
+  - type: web
+    name: heartopia-mp-paint-relay
+    runtime: node
+    plan: free
+    rootDir: .
+    buildCommand: npm install --omit=dev
+    startCommand: node server/relay.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 22.11.0
+      - key: MAX_MEMBERS
+        value: 24

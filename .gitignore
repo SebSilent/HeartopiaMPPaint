@@ -1,0 +1,18 @@
+# dependencies (only needed for the optional relay + tests)
+node_modules/
+
+# local scratch: fetched reference pages, Multiplayer Piano sources, captures
+_research/
+
+# impeccable detector state
+.impeccable/
+
+# logs / os noise
+*.log
+npm-debug.log*
+.DS_Store
+Thumbs.db
+
+# editor
+.vscode/
+.idea/

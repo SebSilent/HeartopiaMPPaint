@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>Heartopia Multiplayer Paint</title>
+<meta name="description" content="Paint together on one shared Heartopia board in your browser. Live cursors, the full 125-shade palette, mouse, pen and touch.">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="Heartopia Multiplayer Paint">
+<meta property="og:description" content="A shared pixel board for Heartopia players. Everyone paints at the same time, on any device.">
+<meta name="theme-color" content="#12312f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2312312f'/%3E%3Crect x='5' y='5' width='10' height='10' fill='%23ea696d'/%3E%3Crect x='17' y='5' width='10' height='10' fill='%23fdab34'/%3E%3Crect x='5' y='17' width='10' height='10' fill='%2340b678'/%3E%3Crect x='17' y='17' width='10' height='10' fill='%232981c0'/%3E%3C/svg%3E">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Silkscreen&display=swap">
+<link rel="stylesheet" href="./assets/css/style.css">
+
+<script>
+  /* One place to point the site at your own relay server.
+     Leave relayUrl empty to use serverless peer-to-peer rooms (GitHub Pages only). */
+  window.HMP_CONFIG = {
+    relayUrl: ''
+  };
+</script>
+</head>
+
+<body>
+
+<!-- ============================ nickname gate ============================ -->
+<div id="veil" class="veil">
+  <div class="join-wrap">
+    <div id="joinCard" class="card join-card notch">
+      <header class="card-head">
+        <h1>Heartopia <span>multiplayer paint</span></h1>
+        <p class="sub">One shared board, painted at the same time by everyone in the room. Pick a name and you are on it.</p>
+      </header>
+
+      <div class="field">
+        <label for="nick">Nickname <em>needed before you can paint</em></label>
+        <input id="nick" type="text" maxlength="16" autocomplete="nickname off" spellcheck="false"
+               placeholder="How others will see you">
+        <div id="nickErr" class="err" role="alert"></div>
+      </div>
+
+      <div class="field">
+        <label>Your colour <span class="dims">13 Heartopia groups</span></label>
+        <div id="myColors" class="color-row"></div>
+      </div>
+
+      <div class="field">
+        <label>Board <span id="dims" class="dims"></span></label>
+        <div class="board-row">
+          <div id="ratios" class="seg small"></div>
+          <div id="levels" class="seg small"></div>
+        </div>
+        <p id="boardNote" class="fine"></p>
+      </div>
+
+      <div class="field">
+        <label for="room">Room</label>
+        <div class="room-row">
+          <input id="room" type="text" maxlength="8" spellcheck="false" autocapitalize="characters"
+                 autocomplete="off" placeholder="ABCDE">
+          <button id="newRoom" class="btn ghost" type="button">New code</button>
+        </div>
+      </div>
+
+      <button id="join" class="btn primary big" type="button">Start painting</button>
+      <p class="fineprint">After joining, the room code in the top bar turns into an invite link. Anyone who opens it lands on the same board.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ================================ app ================================ -->
+<div id="app" class="app" hidden>
+  <header class="bar">
+    <div class="bar-left">
+      <span class="brand">Heartopia <b>MP PAINT</b></span>
+      <button id="roomChip" class="room-chip" type="button" title="Copy invite link">
+        <span class="code" id="roomCode">-----</span>
+      </button>
+      <span id="net" class="net" data-state="idle"><i class="dot"></i><span id="netText">idle</span></span>
+    </div>
+    <div class="bar-right">
+      <span id="players" class="players"></span>
+      <span id="meChip" class="me-chip"></span>
+      <button id="btnBoard" class="btn ghost" type="button" title="Change board size">Board</button>
+      <button id="btnGrid" class="btn ghost active" type="button" title="Toggle grid (G)">Grid</button>
+      <button id="btnSave" class="btn ghost" type="button" title="Save PNG (Ctrl+S)">PNG</button>
+      <button id="btnClear" class="btn ghost danger" type="button" title="Clear the board for everyone">Clear</button>
+      <button id="btnHelp" class="btn ghost" type="button" title="Controls">Keys</button>
+      <button id="btnLeave" class="btn ghost" type="button" title="Leave the room">Leave</button>
+    </div>
+  </header>
+
+  <main id="stage" class="stage">
+    <canvas id="base"></canvas>
+    <canvas id="fx"></canvas>
+    <div id="lockNote" class="lock-note" hidden>Waiting for the room…</div>
+    <div class="zoom">
+      <button id="zOut" class="zbtn" type="button" title="Zoom out (-)">−</button>
+      <span id="zoomVal" class="zval">100%</span>
+      <button id="zIn" class="zbtn" type="button" title="Zoom in (+)">+</button>
+      <button id="zFit" class="zbtn wide" type="button" title="Fit to screen (0)">Fit</button>
+    </div>
+
+    <div id="help" class="help notch" hidden>
+      <h2>Controls</h2>
+      <ul>
+        <li>Drag to paint. Every finger paints on its own, so two-finger drawing works.</li>
+        <li><kbd>B</kbd> brush · <kbd>E</kbd> eraser · <kbd>I</kbd> eyedropper · <kbd>H</kbd> hand</li>
+        <li><kbd>[</kbd> <kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>0</kbd> fit · <kbd>+</kbd> <kbd>−</kbd> zoom</li>
+        <li>Zoom: wheel, or pinch with two fingers while the hand tool is active.</li>
+        <li>Pan: hold <kbd>Space</kbd> and drag, or drag with the middle or right button.</li>
+        <li>Ctrl+<kbd>S</kbd> saves the board as a PNG at its native pixel size.</li>
+      </ul>
+      <p class="fine">Cursors are drawn as the tool the other player is actually using: arrow for a mouse, nib for a stylus, a disc for a finger.</p>
+    </div>
+  </main>
+
+  <aside id="dock" class="dock">
+    <div id="tools" class="tools"></div>
+    <div class="dock-row">
+      <span class="dock-label">Brush</span>
+      <div id="brushes" class="brushes"></div>
+      <span class="dock-label">Shade</span>
+      <div id="currentColor" class="current-color">#000000</div>
+    </div>
+    <div id="groups" class="groups"></div>
+    <div id="swatches" class="swatches"></div>
+  </aside>
+</div>
+
+<div id="toast" class="toasts" aria-live="polite"></div>
+
+<!-- ======================= board size dialog ======================= -->
+<div id="boardDialog" class="modal" hidden>
+  <div class="card notch">
+    <h2>Board size</h2>
+    <div class="board-row">
+      <div id="dRatios" class="seg"></div>
+      <div id="dLevels" class="seg"></div>
+    </div>
+    <p class="dims big" id="dDims"></p>
+    <p class="warn" id="dWarn"></p>
+    <div class="card-actions">
+      <button id="dCancel" class="btn ghost" type="button">Cancel</button>
+      <button id="dApply" class="btn" type="button">Resize for everyone</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./assets/js/main.js"></script>
+</body>
+
+</html>

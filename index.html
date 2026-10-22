@@ -79,7 +79,7 @@
       </div>
 
       <button id="join" class="btn primary big" type="button">Start painting</button>
-      <p class="fineprint">After joining, the room code in the top bar turns into an invite link. Anyone who opens it lands on the same design.</p>
+      <p class="fineprint">The room code in the top bar doubles as the invite link.</p>
     </div>
   </div>
 </div>
@@ -132,6 +132,10 @@
       </header>
       <div class="seg small" id="traceModes"></div>
       <div class="panel-row">
+        <button id="outlineBtn" class="btn ghost small" type="button" aria-pressed="false" title="Show the garment silhouette this face prints onto">Outline</button>
+        <p class="fine" id="outlineNote"></p>
+      </div>
+      <div class="panel-row">
         <span class="dock-label">Block</span>
         <div class="seg small tight" id="blockSizes"></div>
         <button id="tickBlock" class="btn ghost small" type="button" title="Tick the block you last painted in (.)">Tick block</button>
@@ -166,11 +170,10 @@
     <section id="d3Panel" class="panel notch wide" hidden aria-label="3D preview">
       <header class="panel-head">
         <h2>3D preview</h2>
-        <span class="panel-note">schematic, not the game's model</span>
         <button class="panel-x" data-close="d3Panel" type="button" aria-label="Close">×</button>
       </header>
       <canvas id="d3Canvas" class="d3-canvas"></canvas>
-      <p class="fine">Drag to orbit. Each face of the item sits where the game puts it, at its real proportions.</p>
+      <p class="fine">Drag to orbit.</p>
       <div class="card-actions">
         <button id="d3Reset" class="btn ghost" type="button">Reset view</button>
       </div>
@@ -188,7 +191,7 @@
         <li>With a stylus down, finger touches are ignored, so palm rejection comes free.</li>
         <li>Shift constrains a line to 45 degrees and a rectangle to a square.</li>
       </ul>
-      <p class="fine">Cursors are drawn as the tool the other player is actually using: arrow for a mouse, nib for a stylus, a disc for a finger. Someone working another face of the design shows up on that face's tab, not on your screen.</p>
+      <p class="fine">A cursor shows the tool its owner is using. People working another face appear on that face's tab.</p>
     </div>
   </main>
 

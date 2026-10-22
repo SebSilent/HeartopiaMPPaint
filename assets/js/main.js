@@ -21,6 +21,7 @@ import { History, patchWrite } from './game/history.js';
 import { Blueprint } from './ui/blueprint.js';
 import { Preview3D } from './game/render3d.js';
 import { findItem, itemIdForBoard, cellTotal } from './game/slots.js';
+import { outlineFor, maskFor, maskInside, hasOutline } from './game/outline.js';
 import { loadImage, rasterize, photoToCells, screenshotToCells, applyCellsToFace, matchSlot } from './ui/importer.js';
 import { palette } from './color/science.js';
 
@@ -62,6 +63,7 @@ const state = {
   fillTolerance: 0,
   mirror: 0,
   showGrid: true,
+  showOutline: true,
   groupIndex: null,
   roomPlayers: 1,
   roomLocked: false,
@@ -126,6 +128,10 @@ const actions = {
   },
   setGridVisible: (v) => {
     if (view) view.showGrid = v;
+  },
+  setOutline: (v) => {
+    state.showOutline = !!v;
+    applyOutline();
   },
   zoom: (f) => {
     if (view) {
@@ -256,6 +262,7 @@ function mount(room) {
   blueprint = new Blueprint(room);
   view.overlay = blueprint;
   view.onFrame((ctx, v) => cursors.draw(ctx, v));
+  view.onFace = () => applyOutline();
   // The grid is the room's truth; the screen is a copy of it that catches up on
   // a schedule. Host and guests render identically, but nothing that has to be
   // correct - checksums, snapshots, handover - ever reads the lagging copy.
@@ -294,6 +301,9 @@ function mount(room) {
   ui.setUndoState(undo);
   ui.syncTrace(blueprint.mode, blueprint.block);
   wireRoom(room);
+  // The room already knows its design, so the outline state can be set now
+  // rather than waiting for an event that may have fired during construction.
+  applyOutline();
   view.start();
   layout();
 }
@@ -319,6 +329,7 @@ function wireRoom(r) {
     ui.showDims();
     ui.setLocked(!r.canPaint, r.canPaint ? '' : 'Waiting for the room…');
     syncFaces();
+    applyOutline();
     report();
     if (roomInfo && roomInfo.item) ui.toast(`Design: ${r.design.item.name} · ${r.design.faces.length} faces`, 'info', 2200);
   });
@@ -364,6 +375,7 @@ function wireRoom(r) {
     ui.setZoom(view.zoomPercent);
     syncFaces();
     refreshTrace();
+    applyOutline();
     rebuild3d();
   });
 
@@ -373,6 +385,7 @@ function wireRoom(r) {
     ui.setZoom(view.zoomPercent);
     syncFaces();
     refreshTrace();
+    applyOutline();
   });
 
   r.on('blueprint', () => refreshTrace());
@@ -429,7 +442,38 @@ function syncFaces() {
 function switchFace(i) {
   if (!room) return;
   room.switchFace(i);
-  if (preview3d) preview3d.invalidate();
+  // A triangle holds the canvas it was built from, so clearing the texture cache
+  // on its own leaves the preview showing the face we just left.
+  rebuild3d();
+  applyOutline();
+}
+
+/* ---------------- garment outline ---------------- */
+
+/**
+ * Show the game's silhouette for the face on screen, when it has one. Canvas
+ * boards and furniture have no outline data, so the toggle simply has nothing
+ * to draw there.
+ */
+function setOutlineFor(faceId) {
+  // 'has' is a property of the face and decides whether the toggle is offered at
+  // all. 'on' is the user's choice. Passing 'on' where the UI reads 'has' would
+  // disable the button whenever the outline is off, so it could never be turned
+  // on a second time.
+  // Read the item off the room, not off the mirror in state: 'ready' can land
+  // before the handlers that fill the mirror in.
+  const item = room.design.id;
+  const has = hasOutline(item, faceId);
+  const on = state.showOutline && has;
+  view.outline = on ? outlineFor(item, faceId) : null;
+  const m = has ? maskFor(item, faceId) : null;
+  ui.setOutlineInfo(has, m ? maskInside(m) : 0, m ? m.length : 0, room.design.item.name);
+}
+
+function applyOutline() {
+  if (!view || !room) return;
+  setOutlineFor(room.design.face.id);
+  view.markDirty();
 }
 
 /* ---------------- undo / redo ---------------- */
@@ -591,7 +635,7 @@ function open3d() {
   if (!room) return;
   const cv = document.getElementById('d3Canvas');
   if (!preview3d) {
-    preview3d = new Preview3D(cv, (faceId) => faceTexture(faceId));
+    preview3d = new Preview3D(cv, (faceId) => faceTexture(faceId), (itemId, faceId) => outlineFor(itemId, faceId));
     bindOrbit(cv);
   }
   rebuild3d();
@@ -779,12 +823,7 @@ function setItem(id) {
   if (!room || !room.canPaint) return;
   const item = findItem(id);
   if (!item) return;
-  const warn =
-    room.design.usedCells() > 0
-      ? `Switch to ${item.name}? It has ${item.faces.length} ${
-          item.faces.length === 1 ? 'face' : 'faces'
-        } and ${cellTotal(item).toLocaleString()} cells, and everything painted here will be wiped for everyone.`
-      : `Switch to ${item.name}?`;
+  const warn = room.design.usedCells() > 0 ? `Switch to ${item.name}? This wipes the board for everyone.` : `Switch to ${item.name}?`;
   if (!confirm(warn)) return;
   if (!room.setItem(id)) return;
   state.item = id;
@@ -793,6 +832,7 @@ function setItem(id) {
   undo.clear();
   ui.setUndoState(undo);
   view.setFace(room.grid, room.design.active);
+  applyOutline();
   ui.toast(`${item.name} · ${item.faces.length} faces`, 'info');
 }
 
@@ -804,6 +844,7 @@ function setBoard(ratio, level) {
   state.level = level;
   state.item = itemIdForBoard(ratio, level);
   view.setFace(room.grid, room.design.active);
+  applyOutline();
 }
 
 function leaveRoom() {

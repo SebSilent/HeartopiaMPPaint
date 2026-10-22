@@ -13,6 +13,8 @@ const PAPER = '#ffffff';
 const PAPER_EDGE = '#c9b997';
 const GRID_LINE = 'rgba(60,45,25,0.16)';
 const GRID_LINE_MAJOR = 'rgba(60,45,25,0.30)';
+const OUTLINE_INK = 'rgba(36,26,16,0.9)';
+const OUTLINE_PAPER = 'rgba(255,253,247,0.85)';
 
 export class View {
   constructor({ base, fx, grid }) {
@@ -51,6 +53,10 @@ export class View {
   setFace(grid, faceIndex) {
     this.grid = grid;
     this.faceIndex = faceIndex;
+    // The outline belongs to the face, so whoever set it last has to restate it
+    // here; otherwise a garment silhouette would survive onto a plain canvas.
+    this.outline = null;
+    if (this.onFace) this.onFace(faceIndex);
     this.rebuildStateCanvas();
     this.fit();
   }
@@ -203,6 +209,8 @@ export class View {
     ctx.imageSmoothingEnabled = false; // Heartopia boards are pixel art
     ctx.drawImage(this._state, r.x, r.y, r.w, r.h);
 
+    if (this.outline && this.outline.w === g.w && this.outline.h === g.h) this._drawOutline(ctx, r);
+
     // grid
     if (this.showGrid && this.scale >= 5) {
       ctx.lineWidth = 1;
@@ -241,6 +249,34 @@ export class View {
     ctx.strokeStyle = PAPER_EDGE;
     ctx.lineWidth = 2;
     ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+  }
+
+  /**
+   * The garment silhouette for the face now on screen. Cell coordinates, so it
+   * scales with the board; drawn over the paint because it is a guide, not art.
+   */
+  _drawOutline(ctx, r) {
+    const o = this.outline;
+    const sx = r.w / o.w;
+    const sy = r.h / o.h;
+    ctx.save();
+    ctx.beginPath();
+    o.ring.forEach((p, i) => {
+      const x = r.x + p[0] * sx;
+      const y = r.y + p[1] * sy;
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.closePath();
+    ctx.strokeStyle = OUTLINE_INK;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+    ctx.setLineDash([4, 4]);
+    ctx.strokeStyle = OUTLINE_PAPER;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
   }
 
   /** Register a callback that paints the overlay layer each frame. */

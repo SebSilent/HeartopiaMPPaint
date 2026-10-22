@@ -7,7 +7,7 @@ import { Room } from './net/room.js';
 import { View } from './view.js';
 import { Cursors } from './cursors.js';
 import { Input, TOOLS } from './input.js';
-import { StrokePacer } from './net/pacer.js';
+import { StrokeDisplay } from './net/display.js';
 import { UI, cleanNick, validateNick, groupForIndex } from './ui.js';
 import { FLAT_COLORS, HEARTOPIA_GROUPS } from './data/heartopia-palette.js';
 import { BRUSH_SIZES, DEFAULTS, dimsFor } from './presets.js';
@@ -151,10 +151,15 @@ function mount(room) {
   });
   cursors = new Cursors({ room });
   view.onFrame((ctx, v) => cursors.draw(ctx, v));
-  // Other people's strokes replay on this schedule; ours land immediately.
-  const pacer = new StrokePacer(room);
-  room.pacer = pacer;
-  view.onTick(() => pacer.tick());
+  // The grid is the room's truth; the screen is a copy of it that catches up on
+  // a schedule. Host and guests render identically, but nothing that has to be
+  // correct - checksums, snapshots, handover - ever reads the lagging copy.
+  const display = new StrokeDisplay(room);
+  room.display = display;
+  view.display = display;
+  view.onTick(() => {
+    if (display.tick()) view.markDirty();
+  });
   // One hook covers wheel, pinch, buttons and fit, so the readout can never
   // disagree with the camera.
   view.onZoom = (percent) => ui.setZoom(percent);

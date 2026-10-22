@@ -34,6 +34,12 @@ const relayUrl = setting('relayUrl', 'relay', '');
 // explicit instruction to use it.
 if (relayUrl && transport === 'peer') transport = 'ws';
 
+/**
+ * How far behind room time remote activity is drawn. One number for cursors and
+ * strokes, so the ink always arrives where the cursor already is.
+ */
+const remoteDelay = Number(setting('renderDelay', 'renderDelay', 90));
+
 export const CONFIG = {
   transport,
   relayUrl,
@@ -63,8 +69,9 @@ export const CONFIG = {
     cursorHz: 20, // outbound pointer updates per second
     timeSyncMs: 2000, // clock ping interval (multiplayerpiano-style)
     repairMs: 8000, // state checksum compare interval
-    renderDelayMs: 70, // remote events are drawn this far in the past, so
-    // jitter arrives in order instead of stuttering
+    // One delay for everything remote: cursors and ink replay on the same
+    // timeline, so paint appears where the cursor already is, not behind it.
+    renderDelayMs: remoteDelay,
     hostTimeoutMs: 12000, // no traffic from host for this long -> re-elect
     joinTimeoutMs: 15000,
   },
@@ -75,7 +82,7 @@ export const CONFIG = {
    * Your own drawing is never delayed by any of this.
    */
   smooth: {
-    delayMs: Number(setting('smoothDelay', 'smoothDelay', 90)),
+    delayMs: remoteDelay,
     spreadMs: Number(setting('smoothSpread', 'smoothSpread', 55)),
     backlogCells: Number(setting('smoothBacklog', 'smoothBacklog', 900)),
   },

@@ -12,10 +12,13 @@ Ordered. Each phase should be shippable on its own.
 
 Before adding anything, close the gaps people hit in the first minute.
 
-- [x] **Smooth remote strokes.** Done in `net/pacer.js`: remote bursts replay on room time
-  (~90 ms behind, painted in over ~55 ms) while local input stays instant. Tunables are in
-  `CONFIG.smooth`, exposed as `?smoothDelay=` / `?smoothSpread=` for testing. If it still stutters on
-  a bad link, raise `delayMs` before touching anything else.
+- [x] **Smooth remote strokes.** Done in `net/display.js`. The grid is the room's truth and is
+  updated the instant a packet lands, on every machine; the screen paints from a copy that releases
+  remote bursts on room time (~90 ms behind, spread over ~55 ms). Your own pen skips the schedule.
+  Because the picture copies *current* grid values when it reveals a cell, it can't strand a stale
+  pixel, and host and guests now render identically. Tunables in `CONFIG.smooth`, as
+  `?smoothDelay=` / `?smoothSpread=` / `?renderDelay=`. If it still stutters on a bad link, raise the
+  delay before touching anything else.
 - [ ] **Undo / redo.** One command per stroke, so it is just a stack of `{cells, from, to}` patches.
   This is the single most missing thing, and it is the reason the rest is safe to try.
 - [ ] **Reconnect without a flash.** Keep the board on screen while the transport re-hands, instead of

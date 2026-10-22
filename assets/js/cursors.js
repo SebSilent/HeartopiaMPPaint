@@ -71,6 +71,10 @@ export class Cursors {
     const c = this._client(ev.from, ev.slot);
     const offset = this.room.clock.offset;
     const base = (ev.sentAt || Date.now()) + offset;
+    // A pointer is on one face of the design. Someone working the back of a
+    // T-shirt is not on your screen, and drawing their cursor at the same
+    // coordinates as yours would be a lie.
+    c.face = ev.face || 0;
     for (const p of ev.points || []) {
       if (!Array.isArray(p) || p.length < 4) continue;
       const [pid, x, y, type, down] = p;
@@ -82,9 +86,23 @@ export class Cursors {
       s.type = type || s.type;
       s.down = !!down;
       s.t = base;
+      s.face = ev.face || 0;
       s.samples.push({ x, y, t: base });
       if (s.samples.length > 24) s.samples.shift();
     }
+  }
+
+  /** Who is working on another face - the face tabs show that. */
+  elsewhere() {
+    const active = this.room.design.active;
+    const out = [];
+    for (const c of this.clients.values()) {
+      if (c.id === this.room.me.clientId) continue;
+      if (c.face != null && c.face !== active) {
+        out.push({ id: c.id, nick: c.nick, color: c.color, face: c.face });
+      }
+    }
+    return out;
   }
 
   /** Draw every remote pointer at the room's playback time. */
@@ -92,6 +110,7 @@ export class Cursors {
     if (!this.visible) return;
     const playT = this.room.clock.now() - CONFIG.timings.renderDelayMs;
     const now = Date.now();
+    const active = this.room.design.active;
 
     for (const [cid, c] of this.clients) {
       if (now - c.seen > CLIENT_TTL) {
@@ -99,6 +118,10 @@ export class Cursors {
         continue;
       }
       for (const [pid, s] of c.pointers) {
+        if (s.face !== active) {
+          // Keep the history (they may come back) but do not draw it here.
+          continue;
+        }
         // drop dead history
         while (s.samples.length && playT - s.samples[0].t > SAMPLE_TTL) s.samples.shift();
         if (!s.samples.length) {

@@ -5,8 +5,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../assets/js/net/room.js';
 import { StrokeDisplay } from '../assets/js/net/display.js';
-import { Grid } from '../assets/js/game/grid.js';
-import { indicesToB64, randomId } from '../assets/js/util.js';
+import { indicesToB64, bytesToB64, b64ToBytes, randomId } from '../assets/js/util.js';
 
 function makeRoom(smooth = {}) {
   const r = new Room({
@@ -16,13 +15,18 @@ function makeRoom(smooth = {}) {
     level: 0,
   });
   r.me.slot = 1;
-  const d = new StrokeDisplay(r, { delayMs: 90, spreadMs: 60, backlogCells: 40, ...smooth });
+  // The display copy lives on the Design now, because a design has one buffer
+  // per face and the copy has to follow the grid it belongs to.
+  const d = new StrokeDisplay(r.design, { delayMs: 90, spreadMs: 60, backlogCells: 40, ...smooth });
   r.display = d;
   return { r, d };
 }
 
 const truth = (r, cells) => cells.map((i) => r.grid.color[i]);
-const screen = (d, cells) => cells.map((i) => d.cells[i]);
+const screen = (d, cells) => {
+  const b = d.cellsFor(0);
+  return cells.map((i) => b[i]);
+};
 
 test('a remote burst is true immediately and drawn slowly', () => {
   const { r, d } = makeRoom();
@@ -48,7 +52,7 @@ test('our own stroke is true and visible on the same call', () => {
   const { r, d } = makeRoom();
   r.paint([5], 9);
   assert.equal(r.grid.color[5], 9);
-  assert.equal(d.cells[5], 9, 'the pen must never be smoothed');
+  assert.equal(screen(d, [5])[0], 9, 'the pen must never be smoothed');
 });
 
 test('a slow-revealed cell shows whatever is true when it is revealed', () => {
@@ -58,7 +62,7 @@ test('a slow-revealed cell shows whatever is true when it is revealed', () => {
   r.paintLocal([8], 11, 6); // someone paints over it first
 
   d.tick(t0 + 500);
-  assert.equal(d.cells[8], 11, 'no stale pixel can be left on screen');
+  assert.equal(screen(d, [8])[0], 11, 'no stale pixel can be left on screen');
   assert.equal(r.grid.color[8], 11);
 });
 
@@ -69,7 +73,7 @@ test('an erased cell stays erased once revealed', () => {
   r._onOp({ from: 'other', k: 'op', c: 0, seq: 9, rt: t0, cells: indicesToB64([12]) }, 2);
   d.tick(t0 + 500);
   assert.equal(r.grid.color[12], 0);
-  assert.equal(d.cells[12], 0);
+  assert.equal(screen(d, [12])[0], 0);
 });
 
 test('the picture equals the truth the moment the queue empties', () => {
@@ -78,18 +82,17 @@ test('the picture equals the truth the moment the queue empties', () => {
   r._onOp({ from: 'other', k: 'op', c: 4, seq: 1, rt: t0, cells: indicesToB64([0, 1, 2]) }, 2);
   d.tick(t0 + 500);
   assert.equal(d.queue.length, 0);
-  assert.deepEqual([...d.cells], [...r.grid.color], 'byte for byte');
+  assert.deepEqual([...d.cellsFor(0)], [...r.grid.color], 'byte for byte');
 });
 
 test('every release reports work done, which is what asks for a repaint', () => {
   const { r, d } = makeRoom();
   const t0 = r.clock.now();
   r._onOp({ from: 'other', k: 'op', c: 4, seq: 2, rt: t0, cells: indicesToB64([0, 1, 2, 3, 4, 5]) }, 2);
-  // main.js turns a non-zero return into view.markDirty().
-  const first = d.tick(t0 + 100);
-  const second = d.tick(t0 + 130);
-  assert.ok(first > 0 && first < 6, `a frame should reveal part of it, got ${first}`);
-  assert.ok(second > 0 && first + second < 6, `and more next frame, still not all`);
+  // tick() returns faces touched, which is what makes main.js call markDirty().
+  // "Did anything move this frame" is the only question the render loop asks.
+  assert.ok(d.tick(t0 + 100) > 0, 'a frame inside the spread reveals some of it');
+  assert.ok(d.tick(t0 + 130) > 0, 'and more next frame');
   assert.ok(d.tick(t0 + 160) > 0, 'the remainder lands by due + spread');
   assert.equal(d.queue.length, 0, 'finished');
   assert.equal(d.tick(t0 + 300), 0, 'an idle tick must not ask for a repaint');
@@ -109,9 +112,9 @@ test('a backlog we cannot drain is drained, not queued forever', () => {
 test('an op with no send time is paced from when it arrived', () => {
   const { r, d } = makeRoom();
   r._onOp({ from: 'other', k: 'op', c: 6, seq: 1, cells: indicesToB64([2]) }, 3);
-  assert.equal(d.cells[2], 0);
+  assert.equal(screen(d, [2])[0], 0);
   d.tick(r.clock.now() + 500);
-  assert.equal(d.cells[2], 6);
+  assert.equal(screen(d, [2])[0], 6);
 });
 
 test('clearing the board snaps the picture to it', () => {
@@ -129,8 +132,9 @@ test('a board resize reallocates the picture instead of reading past it', () => 
   const before = r.grid.color.length;
   r.setBoard('4:3', 2);
   assert.notEqual(r.grid.color.length, before);
-  assert.equal(d.cells.length, r.grid.color.length, 'same size or the copy is garbage');
-  assert.deepEqual([...d.cells], [...r.grid.color]);
+  const copy = d.cellsFor(0);
+  assert.equal(copy.length, r.grid.color.length, 'same size or the copy is garbage');
+  assert.deepEqual([...copy], [...r.grid.color]);
 });
 
 test('a snapshot snaps the picture to it', () => {
@@ -138,16 +142,20 @@ test('a snapshot snaps the picture to it', () => {
   r.paint([0], 7);
   const t0 = r.clock.now();
   r._onOp({ from: 'other', k: 'op', c: 4, seq: 3, rt: t0, cells: indicesToB64([1]) }, 2);
-  assert.equal(d.cells[1], 0, 'not on screen yet');
+  assert.equal(screen(d, [1])[0], 0, 'not on screen yet');
 
-  // A snapshot from elsewhere, where cell 1 is still empty.
-  const elsewhere = new Grid(r.grid.w, r.grid.h);
-  elsewhere.paint([0], 7, 9, 5);
-  r._onSnapshot(elsewhere.toSnapshot(9));
+  // A snapshot from elsewhere, where cell 1 is still empty. `cells` is a
+  // base64 *string*, so mapping over it would map over characters - decode it,
+  // blank the cell, re-encode.
+  const elsewhere = r.design.toSnapshot(9);
+  const blank = b64ToBytes(elsewhere.faces[0].cells);
+  blank[1] = 0;
+  elsewhere.faces[0].cells = bytesToB64(blank);
+  r._onSnapshot(elsewhere);
 
   assert.equal(d.queue.length, 0, 'a snapshot is the whole truth, so stop animating');
-  assert.deepEqual([...d.cells], [...r.grid.color], 'picture equals grid, byte for byte');
-  assert.equal(d.cells[1], 0, 'nothing pending survives it');
+  assert.deepEqual([...d.cellsFor(0)], [...r.grid.color], 'picture equals grid, byte for byte');
+  assert.equal(screen(d, [1])[0], 0, 'nothing pending survives it');
 });
 
 test('the host is paced exactly like a guest, on the screen only', () => {
@@ -156,7 +164,7 @@ test('the host is paced exactly like a guest, on the screen only', () => {
   const t0 = r.clock.now();
   r._onOp({ from: 'other', k: 'op', c: 7, seq: 1, rt: t0, cells: indicesToB64([3]) }, 2);
   assert.equal(r.grid.color[3], 7, 'the authority grid is never behind the wire');
-  assert.equal(d.cells[3], 0, 'but it still draws smoothly');
+  assert.equal(screen(d, [3])[0], 0, 'but it still draws smoothly');
 });
 
 test('taking over the room stops animating and matches the truth', () => {
@@ -167,7 +175,7 @@ test('taking over the room stops animating and matches the truth', () => {
   assert.ok(d.queue.length, 'mid-animation when the host vanished');
   r.roleChanged(true);
   assert.equal(d.queue.length, 0);
-  assert.deepEqual([...d.cells], [...r.grid.color], 'a published checksum must match what we hold');
+  assert.deepEqual([...d.cellsFor(0)], [...r.grid.color], 'a published checksum must match what we hold');
 });
 
 /* ---------------- the roster: a link is not a person ---------------- */

@@ -5,17 +5,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>Heartopia Multiplayer Paint</title>
-<meta name="description" content="Paint together on one shared Heartopia board in your browser. Live cursors, the full 125-shade palette, mouse, pen and touch.">
+<meta name="description" content="Paint Heartopia designs together in your browser — canvases, clothes and furniture, one shared board, live cursors, the full palette, mouse, pen and touch.">
 
 <meta property="og:type" content="website">
 <meta property="og:title" content="Heartopia Multiplayer Paint">
-<meta property="og:description" content="A shared pixel board for Heartopia players. Everyone paints at the same time, on any device.">
-<meta name="theme-color" content="#12312f">
+<meta property="og:description" content="A shared pixel board for Heartopia players. Canvases, garments and furniture, painted at the same time, on any device.">
+<meta name="theme-color" content="#74584d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2312312f'/%3E%3Crect x='5' y='5' width='10' height='10' fill='%23ea696d'/%3E%3Crect x='17' y='5' width='10' height='10' fill='%23fdab34'/%3E%3Crect x='5' y='17' width='10' height='10' fill='%2340b678'/%3E%3Crect x='17' y='17' width='10' height='10' fill='%232981c0'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2374584d'/%3E%3Crect x='5' y='5' width='10' height='10' fill='%23ea696d'/%3E%3Crect x='17' y='5' width='10' height='10' fill='%23fdab34'/%3E%3Crect x='5' y='17' width='10' height='10' fill='%2340b678'/%3E%3Crect x='17' y='17' width='10' height='10' fill='%232981c0'/%3E%3C/svg%3E">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,7 +39,7 @@
     <div id="joinCard" class="card join-card notch">
       <header class="card-head">
         <h1>Heartopia <span>multiplayer paint</span></h1>
-        <p class="sub">One shared board, painted at the same time by everyone in the room. Pick a name and you are on it.</p>
+        <p class="sub">One shared design, painted at the same time by everyone in the room. Pick a name and you are on it.</p>
       </header>
 
       <div class="field">
@@ -55,6 +55,12 @@
       </div>
 
       <div class="field">
+        <label>What are you making</label>
+        <div id="famRow" class="seg small fam-row"></div>
+        <div id="itemPick" class="item-pick"></div>
+      </div>
+
+      <div class="field" id="canvasSizeField">
         <label>Board <span id="dims" class="dims"></span></label>
         <div class="board-row">
           <div id="ratios" class="seg small"></div>
@@ -67,13 +73,13 @@
         <label for="room">Room</label>
         <div class="room-row">
           <input id="room" type="text" maxlength="8" spellcheck="false" autocapitalize="characters"
-                 autocomplete="off" placeholder="ABCDE">
+                 autocomplete="off" placeholder="ABCDEFG">
           <button id="newRoom" class="btn ghost" type="button">New code</button>
         </div>
       </div>
 
       <button id="join" class="btn primary big" type="button">Start painting</button>
-      <p class="fineprint">After joining, the room code in the top bar turns into an invite link. Anyone who opens it lands on the same board.</p>
+      <p class="fineprint">After joining, the room code in the top bar turns into an invite link. Anyone who opens it lands on the same design.</p>
     </div>
   </div>
 </div>
@@ -84,21 +90,28 @@
     <div class="bar-left">
       <span class="brand">Heartopia <b>MP PAINT</b></span>
       <button id="roomChip" class="room-chip" type="button" title="Copy invite link">
-        <span class="code" id="roomCode">-----</span>
+        <span class="code" id="roomCode">-------</span>
       </button>
       <span id="net" class="net" data-state="idle"><i class="dot"></i><span id="netText">idle</span></span>
     </div>
     <div class="bar-right">
       <span id="players" class="players"></span>
       <span id="meChip" class="me-chip"></span>
-      <button id="btnBoard" class="btn ghost" type="button" title="Change board size">Board</button>
+      <button id="btnUndo" class="btn ghost icon" type="button" title="Undo (Ctrl+Z)" aria-label="Undo"></button>
+      <button id="btnRedo" class="btn ghost icon" type="button" title="Redo (Ctrl+Y)" aria-label="Redo"></button>
+      <button id="btnDesign" class="btn ghost" type="button" title="Change what you are making">Design</button>
+      <button id="btnImport" class="btn ghost" type="button" title="Import a photo or a game screenshot">Import</button>
+      <button id="btnTrace" class="btn ghost" type="button" title="Blueprint mode for keying in by hand">Trace</button>
+      <button id="btn3d" class="btn ghost" type="button" title="3D preview of the faces">3D</button>
       <button id="btnGrid" class="btn ghost active" type="button" title="Toggle grid (G)">Grid</button>
       <button id="btnSave" class="btn ghost" type="button" title="Save PNG (Ctrl+S)">PNG</button>
-      <button id="btnClear" class="btn ghost danger" type="button" title="Clear the board for everyone">Clear</button>
+      <button id="btnClear" class="btn ghost danger" type="button" title="Clear for everyone">Clear</button>
       <button id="btnHelp" class="btn ghost" type="button" title="Controls">Keys</button>
       <button id="btnLeave" class="btn ghost" type="button" title="Leave the room">Leave</button>
     </div>
   </header>
+
+  <nav id="faces" class="faces" aria-label="Faces of this design"></nav>
 
   <main id="stage" class="stage">
     <canvas id="base"></canvas>
@@ -111,23 +124,77 @@
       <button id="zFit" class="zbtn wide" type="button" title="Fit to screen (0)">Fit</button>
     </div>
 
+    <!-- --------------------------- trace panel --------------------------- -->
+    <section id="tracePanel" class="panel notch" hidden aria-label="Blueprint mode">
+      <header class="panel-head">
+        <h2>Blueprint</h2>
+        <button class="panel-x" data-close="tracePanel" type="button" aria-label="Close">×</button>
+      </header>
+      <div class="seg small" id="traceModes"></div>
+      <div class="panel-row">
+        <span class="dock-label">Block</span>
+        <div class="seg small tight" id="blockSizes"></div>
+        <button id="tickBlock" class="btn ghost small" type="button" title="Tick the block you last painted in (.)">Tick block</button>
+      </div>
+      <p class="fine" id="traceNote"></p>
+      <div id="legend" class="legend"></div>
+    </section>
+
+    <!-- --------------------------- import panel --------------------------- -->
+    <section id="importPanel" class="panel notch" hidden aria-label="Import">
+      <header class="panel-head">
+        <h2>Import</h2>
+        <button class="panel-x" data-close="importPanel" type="button" aria-label="Close">×</button>
+      </header>
+      <div class="seg small" id="importModes"></div>
+      <label class="drop" id="drop">
+        <input id="file" type="file" accept="image/*" hidden>
+        <span id="dropText">Choose a photo, or drop one on the board</span>
+      </label>
+      <!-- A plain box: the preview is a canvas the app hands in, and a canvas
+           nested inside a canvas is fallback content, i.e. invisible. -->
+      <div id="importPrev" class="import-prev" hidden></div>
+      <div id="importInfo" class="fine"></div>
+      <div id="importControls" class="controls"></div>
+      <div class="card-actions">
+        <button id="importCancel" class="btn ghost" type="button">Cancel</button>
+        <button id="importApply" class="btn" type="button" disabled>Paint it onto this face</button>
+      </div>
+    </section>
+
+    <!-- ---------------------------- 3D panel ---------------------------- -->
+    <section id="d3Panel" class="panel notch wide" hidden aria-label="3D preview">
+      <header class="panel-head">
+        <h2>3D preview</h2>
+        <span class="panel-note">schematic — not the game's model</span>
+        <button class="panel-x" data-close="d3Panel" type="button" aria-label="Close">×</button>
+      </header>
+      <canvas id="d3Canvas" class="d3-canvas"></canvas>
+      <p class="fine">Drag to orbit. Each face of the item sits where the game puts it, at its real proportions.</p>
+      <div class="card-actions">
+        <button id="d3Reset" class="btn ghost" type="button">Reset view</button>
+      </div>
+    </section>
+
     <div id="help" class="help notch" hidden>
       <h2>Controls</h2>
       <ul>
         <li>Drag to paint. Every finger paints on its own, so two-finger drawing works.</li>
-        <li><kbd>B</kbd> brush · <kbd>E</kbd> eraser · <kbd>I</kbd> eyedropper</li>
-        <li><kbd>[</kbd> <kbd>]</kbd> brush size · <kbd>G</kbd> grid · <kbd>0</kbd> fit · <kbd>+</kbd> <kbd>−</kbd> zoom</li>
+        <li><kbd>B</kbd> brush · <kbd>E</kbd> eraser · <kbd>I</kbd> eyedropper · <kbd>F</kbd> bucket · <kbd>L</kbd> line · <kbd>R</kbd> rectangle · <kbd>O</kbd> ellipse · <kbd>A</kbd> arrow · <kbd>V</kbd> select</li>
+        <li><kbd>[</kbd> <kbd>]</kbd> brush size · <kbd>M</kbd> mirror · <kbd>G</kbd> grid · <kbd>0</kbd> fit · <kbd>+</kbd> <kbd>−</kbd> zoom</li>
+        <li><kbd>Ctrl</kbd>+<kbd>Z</kbd> undo · <kbd>Ctrl</kbd>+<kbd>Y</kbd> redo — one step per stroke, shape or fill.</li>
         <li>Zoom: mouse wheel, or pinch with two fingers. Two fingers never paint, so you can rest your hand on the screen.</li>
         <li>Pan: two-finger drag, hold <kbd>Space</kbd> and drag, or drag with the middle or right button.</li>
         <li>With a stylus down, finger touches are ignored, so palm rejection comes free.</li>
-        <li>Ctrl+<kbd>S</kbd> saves the board as a PNG at its native pixel size.</li>
+        <li>Shift constrains a line to 45 degrees and a rectangle to a square.</li>
       </ul>
-      <p class="fine">Cursors are drawn as the tool the other player is actually using: arrow for a mouse, nib for a stylus, a disc for a finger.</p>
+      <p class="fine">Cursors are drawn as the tool the other player is actually using: arrow for a mouse, nib for a stylus, a disc for a finger. Someone working another face of the design shows up on that face's tab, not on your screen.</p>
     </div>
   </main>
 
   <aside id="dock" class="dock">
     <div id="tools" class="tools"></div>
+    <div id="toolOpts" class="dock-row opts"></div>
     <div class="dock-row">
       <span class="dock-label">Brush</span>
       <div id="brushes" class="brushes"></div>
@@ -147,19 +214,17 @@
 
 <div id="toast" class="toasts" aria-live="polite"></div>
 
-<!-- ======================= board size dialog ======================= -->
-<div id="boardDialog" class="modal" hidden>
-  <div class="card notch">
-    <h2>Board size</h2>
-    <div class="board-row">
-      <div id="dRatios" class="seg"></div>
-      <div id="dLevels" class="seg"></div>
-    </div>
-    <p class="dims big" id="dDims"></p>
-    <p class="warn" id="dWarn"></p>
+<!-- ======================= design picker dialog ======================= -->
+<div id="designDialog" class="modal" hidden>
+  <div class="card notch wide-card">
+    <h2>What are you making?</h2>
+    <div class="seg" id="fFams"></div>
+    <div id="fItems" class="item-grid"></div>
+    <p class="dims big" id="fInfo"></p>
+    <p class="warn" id="fWarn"></p>
     <div class="card-actions">
-      <button id="dCancel" class="btn ghost" type="button">Cancel</button>
-      <button id="dApply" class="btn" type="button">Resize for everyone</button>
+      <button id="fCancel" class="btn ghost" type="button">Cancel</button>
+      <button id="fApply" class="btn" type="button">Switch for everyone</button>
     </div>
   </div>
 </div>

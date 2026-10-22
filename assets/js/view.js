@@ -19,6 +19,8 @@ export class View {
     this.base = base;
     this.fx = fx;
     this.grid = grid;
+    /** Which face of the design this camera is looking at. */
+    this.faceIndex = 0;
     this.bctx = base.getContext('2d');
     this.fctx = fx.getContext('2d');
     this.scale = 1;
@@ -40,7 +42,17 @@ export class View {
      * paints from it; grid.color stays the room's truth for everything else.
      */
     this.display = null;
+    /** Set by the blueprint overlay: {draw(ctx, view)} or null. */
+    this.overlay = null;
     this.rebuildStateCanvas();
+  }
+
+  /** Point the camera at another face of the same design. */
+  setFace(grid, faceIndex) {
+    this.grid = grid;
+    this.faceIndex = faceIndex;
+    this.rebuildStateCanvas();
+    this.fit();
   }
 
   /* ---------- sizing ---------- */
@@ -83,6 +95,13 @@ export class View {
   }
 
   /* ---------- state layer ---------- */
+
+  /** The display copy for the face on screen; null when there is no smoothing. */
+  displayCells() {
+    if (!this.display) return null;
+    const b = this.display.cellsFor(this.faceIndex);
+    return b && b.length === this.grid.n ? b : null;
+  }
 
   rebuildStateCanvas() {
     const { w, h } = this.grid;
@@ -179,7 +198,7 @@ export class View {
     ctx.restore();
 
     // pixels - from the display copy, which may be a moment behind the grid
-    g.fillRGBA(this._u32, this.display ? this.display.cells : null);
+    g.fillRGBA(this._u32, this.displayCells());
     this._sctx.putImageData(this._image, 0, 0);
     ctx.imageSmoothingEnabled = false; // Heartopia boards are pixel art
     ctx.drawImage(this._state, r.x, r.y, r.w, r.h);
@@ -252,6 +271,15 @@ export class View {
       const ctx = this.fctx;
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       ctx.clearRect(0, 0, this.cssW, this.cssH);
+      // The blueprint sits under the cursors: it is furniture for the hand,
+      // not something to draw on top of.
+      if (this.overlay) {
+        try {
+          this.overlay.draw(ctx, this);
+        } catch (e) {
+          console.error('overlay failed', e);
+        }
+      }
       for (const fn of this._fxDrawers) {
         try {
           fn(ctx, this);

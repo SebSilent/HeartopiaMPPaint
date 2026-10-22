@@ -243,10 +243,16 @@ input::placeholder { color: #6b5c48; }
   inset: 0;
   display: grid;
   grid-template-columns: 1fr;
-  grid-template-rows: var(--bar-h) 1fr auto;
-  grid-template-areas: "bar" "stage" "dock";
+  /* The dock's content is taller than most screens - 125 swatches plus tools -
+     so it is capped below and given minmax(0,1fr) here. With a plain `auto` row
+     an iPad portrait gave the board 256px of an 1180px screen. */
+  grid-template-rows: var(--bar-h) auto minmax(0, 1fr) auto;
+  grid-template-areas: "bar" "faces" "stage" "dock";
   padding: 0 var(--safe-r) var(--safe-b) var(--safe-l);
 }
+/* display:grid beats the browser's [hidden] { display:none }, so an app that is
+   hidden with the attribute stayed laid out and live behind the join gate. */
+.app[hidden] { display: none; }
 
 .bar {
   grid-area: bar;
@@ -331,7 +337,12 @@ input::placeholder { color: #6b5c48; }
   background: var(--ground-deep);
   touch-action: none;
 }
-.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* Direct children only. The panels live inside the stage too, and a bare
+   `.stage canvas` also caught #d3Canvas and the import preview: absolute +
+   inset:0 took them out of the panel's flow, so the panel sized itself as if
+   they were empty (that is the whole 151px-around-240px mystery) and the canvas
+   painted over its own close button. */
+.stage > canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 .app.locked .stage { cursor: progress; }
 .app.locked .stage canvas { opacity: 0.55; }
 
@@ -413,6 +424,327 @@ kbd {
   color: var(--ink);
 }
 
+/* ------------------------------- face tabs ------------------------------- */
+
+/* A garment is several differently-shaped boards, not one grid, so something
+   has to say which piece you are looking at. One tab would be noise, and a
+   canvas genuinely has one face, so the strip is emptied and hidden in that
+   case - hence the [hidden] rule, which display:flex would otherwise beat. */
+.faces {
+  grid-area: faces;
+  display: flex;
+  align-items: stretch;
+  gap: 5px;
+  padding: 6px 12px calc(6px + 2px);
+  background: var(--ground-raised);
+  border-bottom: 2px solid var(--rule);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.faces::-webkit-scrollbar { display: none; }
+.faces[hidden] { display: none; }
+
+.face {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border: 2px solid var(--rule-strong);
+  background: transparent;
+  color: var(--on-ground-2);
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.face:hover { color: var(--on-ground); border-color: var(--accent); }
+.face.active { background: var(--accent); border-color: var(--accent-deep); color: var(--accent-ink); }
+.face b {
+  font-family: var(--font-pixel);
+  font-weight: 400;
+  font-size: 0.66rem;
+  opacity: 0.75;
+}
+.face .who-row { margin-left: 1px; }
+
+/* Who is on a face you are not looking at. Without this, a teammate painting
+   the left sleeve is simply invisible. */
+.who-row { display: inline-flex; align-items: center; gap: 2px; }
+.who { width: 9px; height: 9px; background: var(--c); flex: 0 0 auto; }
+.who.more {
+  width: auto;
+  height: auto;
+  background: transparent;
+  font-family: var(--font-pixel);
+  font-size: 0.62rem;
+  color: var(--on-ground-2);
+}
+
+/* ------------------------------ stage panels ------------------------------ */
+
+/* Trace, Import and 3D all float over the board: they are looked at while you
+   paint, not instead of painting. Same paper card as the controls sheet. */
+.panel {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  z-index: 20;
+  width: min(348px, calc(100% - 24px));
+  /* Must be a viewport unit, not a percentage. The stage is a minmax(0,1fr)
+     grid row, so its height depends on the dock's height, the dock's height
+     depends on --dock-h, and --dock-h is measured from the dock in JS. A panel
+     that reads --dock-h back (calc(100% - 24px) resolves against the stage)
+     closes that loop, and the engine settles it by clipping the panel to
+     whatever the previous pass said - 151px around 240px of content, with no
+     scrollbar and the canvas painting over its own header. Nothing else moved
+     it: height, display, overflow, filter and clip-path were all no-ops. */
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  background: var(--panel);
+  color: var(--ink);
+  border: 3px solid var(--accent-deep);
+  padding: 12px 14px 14px;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+.panel[hidden] { display: none; }
+.panel.wide { width: min(560px, calc(100% - 24px)); }
+
+.panel-head { display: flex; align-items: baseline; gap: 10px; }
+.panel-head h2 {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink);
+  flex: 1 1 auto;
+}
+.panel-note {
+  font-family: var(--font-pixel);
+  font-size: 0.62rem;
+  color: var(--ink-2);
+  flex: 0 0 auto;
+}
+.panel-x {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border: 2px solid var(--rule-warm);
+  background: #fffdf7;
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.panel-x:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
+.panel-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.panel .dock-label { color: var(--ink-2); }
+.panel .seg button { background: #fffdf7; color: var(--ink); }
+.panel .fine { margin: 0; }
+
+/* The numbered shade list is the trace mode's whole product: you key in shade
+   3, then shade 4. Count and colour have to be readable at a glance side by
+   side, so the number is the big thing on the chip. */
+.legend { display: flex; flex-wrap: wrap; gap: 5px; }
+.leg {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 5px;
+  border: 2px solid var(--rule-warm);
+  background: var(--c);
+  color: var(--ink, var(--c));
+  cursor: pointer;
+}
+.leg i {
+  font-style: normal;
+  font-family: var(--font-pixel);
+  font-size: 0.72rem;
+  font-weight: 400;
+  min-width: 16px;
+  text-align: center;
+  color: var(--ink);
+}
+.leg span { font-size: 0.78rem; font-weight: 800; color: var(--ink); }
+.leg:hover { border-color: var(--ink); }
+.leg.active { outline: 3px solid var(--ink); outline-offset: 1px; }
+
+/* -------------------------------- drop zone -------------------------------- */
+
+.drop {
+  display: block;
+  padding: 14px;
+  border: 2px dashed var(--rule-warm);
+  background: #fffdf7;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.drop:hover, .drop.hot { border-color: var(--accent-deep); background: var(--panel-2); color: var(--ink); }
+
+/* The renderer sizes its backing store from getBoundingClientRect(), so the
+   height has to come from CSS and must not chase the canvas's own attribute -
+   that loop collapses the panel to the canvas's 150px default. */
+.d3-canvas {
+  width: 100%;
+  height: 46vh;
+  min-height: 240px;
+  max-height: 380px;
+  display: block;
+  background: var(--ground-deep);
+  border: 2px solid var(--accent-deep);
+  touch-action: none;
+}
+
+/* The import preview is one pixel per cell, scaled up. Resampling it to look
+   smooth would show you a board you are not going to get, so the browser is
+   told explicitly not to interpolate. */
+.import-prev {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  padding: 6px;
+  background: var(--ground-deep);
+  border: 2px solid var(--rule-warm);
+}
+.import-prev[hidden] { display: none; }
+.import-prev canvas {
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  display: block;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* Import controls: a label, a control, and the number it currently means. */
+.controls { display: grid; gap: 8px; }
+.ctl { display: grid; grid-template-columns: 84px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.ctl > span {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+.ctl select, .ctl output {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 5px 7px;
+  border: 2px solid var(--rule-warm);
+  background: #fffdf7;
+  color: var(--ink);
+}
+.ctl output { min-width: 44px; text-align: right; font-family: var(--font-pixel); font-weight: 400; }
+
+input[type="range"].slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+  margin: 0;
+}
+input[type="range"].slider::-webkit-slider-runnable-track {
+  height: 6px;
+  background: var(--rule-warm);
+  border: 1px solid var(--ink-2);
+}
+input[type="range"].slider::-moz-range-track { height: 6px; background: var(--rule-warm); border: 1px solid var(--ink-2); }
+input[type="range"].slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  background: var(--accent);
+  border: 2px solid var(--accent-deep);
+  border-radius: 0;
+}
+input[type="range"].slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: var(--accent);
+  border: 2px solid var(--accent-deep);
+  border-radius: 0;
+}
+
+/* ------------------------------ item pickers ------------------------------ */
+
+/* The join card and the Design dialog both ask what you are making. Chips for
+   a quick pick, a labelled grid when there are eleven garments to tell apart. */
+.fam-row { flex-wrap: wrap; }
+.item-pick { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+.item-chip {
+  padding: 6px 9px;
+  border: 2px solid var(--rule-warm);
+  background: #fffdf7;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--ink);
+  cursor: pointer;
+}
+.item-chip:hover { border-color: var(--accent-deep); }
+.item-chip.active { background: var(--accent); border-color: var(--accent-deep); color: var(--accent-ink); }
+
+.item-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 7px;
+  max-height: 46vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+}
+.item-card {
+  display: grid;
+  gap: 2px;
+  padding: 9px 10px;
+  border: 2px solid var(--rule-warm);
+  background: #fffdf7;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+.item-card b { font-size: 0.88rem; font-weight: 800; }
+.item-card span { font-family: var(--font-pixel); font-size: 0.64rem; font-weight: 400; color: var(--ink-2); }
+.item-card:hover { border-color: var(--accent-deep); }
+.item-card.active { background: var(--accent); border-color: var(--accent-deep); color: var(--accent-ink); }
+.item-card.active span { color: var(--accent-ink); }
+
+.wide-card { max-width: 560px; }
+
+/* ------------------------------ size modifiers ------------------------------ */
+
+/* One set of chips, three sizes: the bar needs small, the dock needs tiny, and
+   the trace panel needs a row that fits eight block widths on a phone. */
+.seg.small button { padding: 6px 9px; font-size: 0.8rem; }
+.seg.tiny { gap: 4px; }
+.seg.tiny button { padding: 5px 8px; font-size: 0.75rem; }
+.seg.tight { gap: 3px; }
+.seg.tight button { padding: 5px 7px; font-size: 0.75rem; min-width: 30px; }
+.btn.small { padding: 6px 10px; font-size: 0.78rem; }
+.btn.primary { background: var(--accent); }
+.btn.icon {
+  padding: 7px 9px;
+  min-width: 34px;
+  display: inline-grid;
+  place-items: center;
+}
+.btn.icon .ic { width: 17px; height: 17px; }
+.dims.dim { opacity: 0.7; }
+
 /* -------------------------------- dock -------------------------------- */
 
 .dock {
@@ -423,13 +755,22 @@ kbd {
      the board off screen. --dock-h is re-measured from this element in JS. */
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Never let the tools eat the board they are next to. The dock is the last
+     row of a minmax(0,1fr) grid, so without a cap it takes its content height
+     and squeezes the stage - on an iPad portrait that was 256px of board. */
+  max-height: min(46vh, 340px);
   padding: 12px 14px calc(12px + var(--safe-b));
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "row" "tools" "palette";
+  /* tools, then the options for the live tool, then brush and shade. These are
+     three separate rows: two children share grid-area "row", and items in the
+     same named area stack on top of each other rather than flow. */
+  grid-template-areas: "tools" "opts" "row" "palette";
   gap: 10px;
   align-content: start;
 }
+
+.opts { grid-area: opts; }
 
 .tools { grid-area: tools; display: flex; flex-direction: column; gap: 6px; }
 .tool {
@@ -591,8 +932,8 @@ kbd {
 @media (min-width: 880px) and (orientation: landscape) {
   .app {
     grid-template-columns: 1fr 272px;
-    grid-template-rows: var(--bar-h) 1fr;
-    grid-template-areas: "bar bar" "stage dock";
+    grid-template-rows: var(--bar-h) auto minmax(0, 1fr);
+    grid-template-areas: "bar bar" "faces faces" "stage dock";
   }
   .dock {
     border-top: 0;
@@ -602,6 +943,8 @@ kbd {
   }
   .tools { flex-direction: row; flex-wrap: wrap; }
   .toasts { bottom: 24px; }
+  /* Room for the zoom control, which sits bottom-right of the board. */
+  .panel { top: 14px; right: 14px; }
 }
 
 @media (max-width: 560px) {
@@ -610,6 +953,23 @@ kbd {
   .tool { padding: 9px; }
   .brand { display: none; }
   .current-color { min-width: 72px; }
+  .faces { padding: 5px 8px 7px; gap: 4px; }
+  .face { padding: 4px 8px; font-size: 0.75rem; }
+  .face b { display: none; }
+  /* A panel over a phone-width board covers the work. Pin it to the bottom so
+     at least the top half of the design stays visible while you read it. */
+  .panel { left: 8px; right: 8px; top: auto; bottom: 8px; width: auto; max-height: 62%; }
+  .ctl { grid-template-columns: 72px minmax(0, 1fr) auto; }
+}
+
+/* Landscape phones are the tight case: the board wants every pixel of height,
+   so the chrome shrinks rather than wrapping into a tall sheet. */
+@media (max-height: 460px) and (orientation: landscape) {
+  :root { --bar-h: 44px; }
+  .faces { padding: 3px 8px 4px; }
+  .face { padding: 3px 8px; font-size: 0.72rem; }
+  .face b { display: none; }
+  .panel { width: min(300px, 46%); max-height: calc(100% - 12px); padding: 8px 10px 10px; }
 }
 
 /* landscape phones: give the board the height, shrink the dock. Only sizes
@@ -618,11 +978,11 @@ kbd {
   /* Short screens: the board needs the height, so the dock goes side by side
      instead of stacking into a 280 px sheet that leaves 50 px of canvas. */
   .dock {
-    grid-template-columns: minmax(0, 208px) minmax(0, 1fr);
-    grid-template-areas:
-      "row palette"
-      "tools palette";
-    align-content: center;
+    /* The board is the whole point on a phone on its side, so the dock is a
+       single scrollable column instead of a two-column sheet. */
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "tools" "opts" "row" "palette";
+    align-content: start;
     padding: 6px 10px;
     gap: 6px 10px;
   }

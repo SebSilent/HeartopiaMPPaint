@@ -13,9 +13,10 @@
 import { WebSocketServer } from 'ws';
 import http from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { Grid } from '../assets/js/game/grid.js';
+import { Design } from '../assets/js/game/design.js';
 import { b64ToIndices, indicesToB64 } from '../assets/js/util.js';
-import { dimsFor, isValidRatio, clampLevel } from '../assets/js/presets.js';
+import { itemIdForBoard, findItem } from '../assets/js/game/slots.js';
+import { isValidRatio, clampLevel } from '../assets/js/presets.js';
 
 const PORT = Number(process.env.PORT || 8787);
 const ROOM_PREFIX = 'hmpaint-v1'; // must match CONFIG.prefix
@@ -26,15 +27,20 @@ const HDR_MS = 8000;
 const MAX_MEMBERS = Number(process.env.MAX_MEMBERS || 24);
 
 class RelayRoom {
-  constructor(code, ratio, level) {
+  constructor(code, ratio, level, item = null) {
     this.code = code;
     this.members = new Map(); // id -> {ws, slot, nick, color, device, seen}
     this.slotCounter = 1; // 0 is reserved for snapshot baselines
     this.lamport = 0;
-    this.room = { ratio: isValidRatio(ratio) ? ratio : '1:1', level: clampLevel(level) };
-    const d = dimsFor(this.room.ratio, this.room.level);
-    this.grid = new Grid(d.w, d.h);
+    // A room is one design: the item, plus one grid per face of it. An old
+    // client still announces {ratio, level}, and that maps to a canvas item.
+    this.itemId = findItem(item) ? item : itemIdForBoard(isValidRatio(ratio) ? ratio : '1:1', clampLevel(level));
+    this.design = new Design(this.itemId);
     this.lastActive = Date.now();
+  }
+
+  get grid() {
+    return this.design.grid;
   }
 
   addMember(ws, profile) {
@@ -62,7 +68,12 @@ class RelayRoom {
   }
 
   snapshot() {
-    return { k: 'welcome', ...this.grid.toSnapshot(this.lamport), room: this.room, roster: this.roster() };
+    return {
+      k: 'welcome',
+      ...this.design.toSnapshot(this.lamport),
+      room: { ...this.design.board, item: this.itemId },
+      roster: this.roster(),
+    };
   }
 
   send(ws, obj) {
@@ -110,10 +121,10 @@ export function createServer(opts = {}) {
     wss.handleUpgrade(req, socket, head, (ws) => wss.emit('connection', ws, url));
   });
 
-  function roomFor(code, ratio, level) {
+  function roomFor(code, ratio, level, item) {
     let r = rooms.get(code);
     if (!r) {
-      r = new RelayRoom(code, ratio, level);
+      r = new RelayRoom(code, ratio, level, item);
       rooms.set(code, r);
     }
     r.lastActive = Date.now();
@@ -132,7 +143,12 @@ export function createServer(opts = {}) {
       ws.close(1008, 'missing id');
       return;
     }
-    const room = roomFor(code, url.searchParams.get('ratio') || '1:1', Number(url.searchParams.get('level') || 1));
+    const room = roomFor(
+      code,
+      url.searchParams.get('ratio') || '1:1',
+      Number(url.searchParams.get('level') || 1),
+      url.searchParams.get('item') || null
+    );
     const member = room.addMember(ws, profile);
     if (!member) {
       ws.send(JSON.stringify({ k: 'full', code }));
@@ -187,28 +203,53 @@ export function createServer(opts = {}) {
         case 'op': {
           const seq = Number(msg.seq) || 0;
           if (seq > room.lamport) room.lamport = seq;
-          room.grid.paint(b64ToIndices(msg.cells), msg.c | 0, seq, me.slot);
-          room.fanout({ k: 'op', from: me.id, slot: me.slot, ts: msg.ts, c: msg.c, seq, cells: msg.cells }, me.id);
+          const face = clampFace(msg.f, room.design.faces.length);
+          room.design.paint(b64ToIndices(msg.cells), msg.c | 0, seq, me.slot, face);
+          room.fanout(
+            { k: 'op', from: me.id, slot: me.slot, ts: msg.ts, f: face, c: msg.c, seq, cells: msg.cells },
+            me.id
+          );
           return;
         }
         case 'clear': {
           const seq = Number(msg.seq) || 0;
           if (seq > room.lamport) room.lamport = seq;
-          room.grid.clearAll(seq, me.slot);
+          room.design.clearAll(seq, me.slot);
           room.fanout({ k: 'clear', from: me.id, slot: me.slot, ts: msg.ts, seq }, me.id);
           return;
         }
+        case 'design': {
+          const seq = Number(msg.seq) || 0;
+          if (seq > room.lamport) room.lamport = seq;
+          if (!findItem(msg.item)) return;
+          room.itemId = msg.item;
+          room.design.setItem(msg.item);
+          room.design.clearAll(seq, me.slot);
+          room.fanout({ k: 'design', from: me.id, slot: me.slot, ts: msg.ts, seq, item: msg.item }, me.id);
+          return;
+        }
+        // An older client resizes by ratio x level instead of by item.
         case 'board': {
           const seq = Number(msg.seq) || 0;
           if (seq > room.lamport) room.lamport = seq;
-          if (isValidRatio(msg.ratio)) room.room = { ratio: msg.ratio, level: clampLevel(msg.level) };
-          const d = dimsFor(room.room.ratio, room.room.level);
-          room.grid.resize(d.w, d.h);
-          room.grid.clearAll(seq, me.slot);
-          room.fanout(
-            { k: 'board', from: me.id, slot: me.slot, ts: msg.ts, seq, ratio: room.room.ratio, level: room.room.level },
-            me.id
-          );
+          if (!isValidRatio(msg.ratio)) return;
+          room.itemId = itemIdForBoard(msg.ratio, clampLevel(msg.level));
+          room.design.setItem(room.itemId);
+          room.design.clearAll(seq, me.slot);
+          room.fanout({ k: 'design', from: me.id, slot: me.slot, ts: msg.ts, seq, item: room.itemId }, me.id);
+          return;
+        }
+        case 'guides': {
+          const face = clampFace(msg.f, room.design.faces.length);
+          room.design.setGuides(face, Array.isArray(msg.lines) ? msg.lines : []);
+          room.fanout({ k: 'guides', from: me.id, slot: me.slot, ts: msg.ts, f: face, lines: msg.lines }, me.id);
+          return;
+        }
+        // Block progress is per-face and small; the relay does not need to
+        // understand it, it only has to not lose it.
+        case 'blocks': {
+          const face = clampFace(msg.f, room.design.faces.length);
+          room.fanout({ k: 'blocks', from: me.id, slot: me.slot, ts: msg.ts, f: face, flags: msg.flags }, me.id);
           return;
         }
         case 'profile': {
@@ -217,7 +258,10 @@ export function createServer(opts = {}) {
           return;
         }
         case 'ptr':
-          room.fanout({ k: 'ptr', from: me.id, slot: me.slot, ts: msg.ts, p: msg.p }, me.id);
+          room.fanout(
+            { k: 'ptr', from: me.id, slot: me.slot, ts: msg.ts, f: clampFace(msg.f, room.design.faces.length), p: msg.p },
+            me.id
+          );
           return;
         case 'bye':
           drop();
@@ -263,8 +307,8 @@ export function createServer(opts = {}) {
         k: 'state-hdr',
         from: 'relay',
         ts: Date.now(),
-        version: room.grid.version,
-        checksum: room.grid.checksum(),
+        version: room.design.version,
+        checksum: room.design.checksum(),
         seq: room.lamport,
       });
       for (const m of room.members.values()) {
@@ -288,6 +332,12 @@ export function createServer(opts = {}) {
   server.on('close', () => clearInterval(sweep));
 
   return { server, rooms, sweep };
+}
+
+/** A face index from the wire is untrusted: an old client sends none at all. */
+function clampFace(f, n) {
+  const i = Number.isFinite(f) ? f | 0 : 0;
+  return Math.max(0, Math.min(n - 1, i));
 }
 
 /* Only run the listener when this file is executed directly, so the tests can

@@ -13,6 +13,8 @@ globalThis.window = globalThis.window || {};
 globalThis.window.PointerEvent = function PointerEvent() {};
 
 import { Grid } from '../assets/js/game/grid.js';
+import { SingleFaceDesign } from '../assets/js/game/design.js';
+import { History } from '../assets/js/game/history.js';
 import { Input, TOOLS, paintColorFor } from '../assets/js/input.js';
 
 const SCALE = 4;
@@ -56,8 +58,13 @@ function makeView() {
 }
 
 function makeRoom(grid) {
+  // Input talks to a Design, not to a bare grid, because a Heartopia item can
+  // be several faces. The stub is a single-face Design rather than a Grid so it
+  // has to honour the same face axis the real one does.
+  const design = new SingleFaceDesign(grid);
   return {
     grid,
+    design,
     me: { slot: 1 },
     canPaint: true,
     lamport: 0,
@@ -67,11 +74,11 @@ function makeRoom(grid) {
     nextSeq() {
       return ++this.lamport;
     },
-    paintLocal(cells, color, seq) {
-      return grid.paint(cells, color, seq, this.me.slot);
+    paintLocal(cells, color, seq, faceIdx = design.active) {
+      return design.paint(cells, color, seq, this.me.slot, faceIdx);
     },
-    sendOp(cells, color, seq) {
-      this.ops.push({ cells: [...cells], color, seq });
+    sendOp(cells, color, seq, faceIdx = design.active) {
+      this.ops.push({ cells: [...cells], color, seq, face: faceIdx });
     },
     sendPointers(p) {
       this.pointers.push(p);
@@ -104,6 +111,7 @@ function makeInput(overrides = {}) {
     view,
     getState: () => state,
     setState: (patch) => Object.assign(state, patch),
+    history: new History(),
   });
   created.push(input);
   return { input, grid, view, room, state };
@@ -164,9 +172,24 @@ test('the eyedropper reads a palette index, not a colour name', () => {
   const { input, grid, state } = makeInput();
   grid.paint([22], 40, 1, 1); // cell (2,2)
   state.tool = TOOLS.PICK;
-  input.onDown(pe({ clientX: 2 * SCALE + 2, clientY: 2 * SCALE + 2 }));
-  input.onUp(pe({ clientX: 2 * SCALE + 2, clientY: 2 * SCALE + 2 }));
+  // Dead centre of cell (2,2). A tap is rounded to a cell, and a point that
+  // lands on the boundary rounds to whichever neighbour happens to be painted -
+  // which is a property of the tap, not a bug in the eyedropper.
+  input.onDown(pe({ clientX: 2 * SCALE + SCALE / 2, clientY: 2 * SCALE + SCALE / 2 }));
+  input.onUp(pe({ clientX: 2 * SCALE + SCALE / 2, clientY: 2 * SCALE + SCALE / 2 }));
   assert.equal(state.colorIdx, 40);
+  input.destroy();
+});
+
+test('the eyedropper works before the room has given you a slot', () => {
+  // Reading the board changes nothing, so it is not gated. Painting is.
+  const { input, grid, room, state } = makeInput();
+  room.canPaint = false;
+  grid.paint([5], 33, 1, 1);
+  state.tool = TOOLS.PICK;
+  input.onDown(pe({ clientX: 5 * SCALE + SCALE / 2, clientY: SCALE / 2 }));
+  assert.equal(state.colorIdx, 33, 'the sample came from the board');
+  assert.deepEqual(room.events, [], 'and nothing was refused, because nothing was asked');
   input.destroy();
 });
 

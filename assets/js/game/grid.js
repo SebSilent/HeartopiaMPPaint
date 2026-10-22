@@ -84,6 +84,32 @@ export class Grid {
     return fnv1a(this.color);
   }
 
+  /** The picture on its own, for a multi-face snapshot. */
+  cellsB64() {
+    return bytesToB64(this.color);
+  }
+
+  setCells(b64) {
+    const bytes = b64ToBytes(b64);
+    if (bytes.length !== this.n) throw new Error(`cell buffer ${bytes.length} != ${this.n}`);
+    this.color.set(bytes);
+    this.version++;
+    return this;
+  }
+
+  maxSeq() {
+    let m = 0;
+    for (let i = 0; i < this.n; i++) if (this.seq[i] > m) m = this.seq[i];
+    return m;
+  }
+
+  /** How many cells hold paint. Cheaper than filtering the whole board. */
+  usedCount() {
+    let n = 0;
+    for (let i = 0; i < this.n; i++) if (this.color[i]) n++;
+    return n;
+  }
+
   /** Cells that are painted, for "canvas is empty" checks and export bounds. */
   usedBounds() {
     let x0 = this.w,
@@ -122,9 +148,7 @@ export class Grid {
   }
 
   _maxSeq() {
-    let m = 0;
-    for (let i = 0; i < this.n; i++) if (this.seq[i] > m) m = this.seq[i];
-    return m;
+    return this.maxSeq();
   }
 
   /**

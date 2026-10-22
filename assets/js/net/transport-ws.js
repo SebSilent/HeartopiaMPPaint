@@ -22,6 +22,7 @@ export function createWSTransport({ url, roomCode, me, board, onMessage, onStatu
     if (board) {
       u.searchParams.set('ratio', board.ratio);
       u.searchParams.set('level', String(board.level));
+      if (board.item) u.searchParams.set('item', board.item);
     }
     return u.toString();
   };

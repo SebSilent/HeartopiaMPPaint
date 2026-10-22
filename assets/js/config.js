@@ -58,7 +58,10 @@ export const CONFIG = {
       { urls: 'stun:stun.l.google.com:19302' },
       { urls: 'stun:stun1.l.google.com:19302' },
     ],
-    debug: Number(setting('peerDebug', 'peerDebug', 1)),
+    // 0 by default. Becoming a guest is normal, but PeerJS logs the host id it
+    // tried to claim as a console error on the way, which reads to a visitor
+    // like a crash. ?peerDebug=1 brings the noise back when you are debugging.
+    debug: Number(setting('peerDebug', 'peerDebug', 0)),
     cdn: 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
   },
 

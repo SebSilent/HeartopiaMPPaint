@@ -28,6 +28,17 @@ const ICONS = {
 const svg = (name, cls = '') =>
   `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
 
+/** Flat shade index (1..125) -> which colour group holds it. */
+export function groupForIndex(idx) {
+  let start = 1;
+  for (let i = 0; i < HEARTOPIA_GROUPS.length; i++) {
+    const len = HEARTOPIA_GROUPS[i].colors.length;
+    if (idx >= start && idx < start + len) return i;
+    start += len;
+  }
+  return 0;
+}
+
 const DEVICE_ICON = { desktop: 'desktop', ipad: 'ipad', iphone: 'phone', android: 'phone', touch: 'ipad' };
 
 export class UI {
@@ -228,7 +239,8 @@ export class UI {
 
   showGroup(i) {
     const e = this.el;
-    const g = HEARTOPIA_GROUPS[clamp(i, 0, HEARTOPIA_GROUPS.length - 1)];
+    i = clamp(i, 0, HEARTOPIA_GROUPS.length - 1);
+    const g = HEARTOPIA_GROUPS[i];
     this.state.groupIndex = i;
     for (const btn of e.groups.children) btn.classList.toggle('active', Number(btn.dataset.group) === i);
     let flat = 1;
@@ -239,6 +251,9 @@ export class UI {
         return `<button class="swatch" data-idx="${idx}" style="--c:${hex}" title="${hex}" aria-label="Colour ${idx}"></button>`;
       })
       .join('');
+    // Only highlights what is showing. Which group is showing is the caller's
+    // decision - if this snapped back to the current shade's group, a category
+    // click could never stick.
     this._syncSwatch();
   }
 
@@ -249,28 +264,16 @@ export class UI {
     e.current.style.setProperty('--c', hex);
     e.current.textContent = hex;
     e.current.style.color = readableInk(hex);
-    if (this.state.groupIndex != null) {
-      const inGroup =
-        this.state.colorIdx >=
-          HEARTOPIA_GROUPS.slice(0, this.state.groupIndex).reduce((a, g) => a + g.colors.length, 1) &&
-        this.state.colorIdx <
-          HEARTOPIA_GROUPS.slice(0, this.state.groupIndex + 1).reduce((a, g) => a + g.colors.length, 1);
-      if (!inGroup) {
-        for (let i = 0; i < HEARTOPIA_GROUPS.length; i++) {
-          const start = HEARTOPIA_GROUPS.slice(0, i).reduce((a, g) => a + g.colors.length, 1);
-          if (this.state.colorIdx >= start && this.state.colorIdx < start + HEARTOPIA_GROUPS[i].colors.length) {
-            this.showGroup(i);
-            break;
-          }
-        }
-      }
-    }
   }
 
   setColorIdx(idx) {
     this.state.colorIdx = idx;
     this.state.colorHex = FLAT_COLORS[idx] || '#ffffff';
-    if (this.el.swatches.children.length) this._syncSwatch();
+    // Follow the shade only when the shade is what changed (a pick, an
+    // eyedropper read). A category click must not be second-guessed.
+    const g = groupForIndex(idx);
+    if (this.state.groupIndex === null || g !== this.state.groupIndex) this.showGroup(g);
+    else if (this.el.swatches.children.length) this._syncSwatch();
   }
 
   setTool(tool) {

@@ -62,6 +62,8 @@ export class Room extends Emitter {
     this.detail = '';
     this.authority = false;
     this.transport = null;
+    // Set by the browser only: paces how remote strokes reach the grid.
+    this.pacer = null;
     this._factory = transportFactory;
     this._roster = new Map();
     // slot 0 is reserved (it marks snapshot baselines), players start at 1
@@ -126,6 +128,9 @@ export class Room extends Emitter {
     if (now) {
       // We inherited the room (host left, we won the re-claim race). Keep the
       // roster we already have and take over numbering from it.
+      // Everything we were still animating has to be on the grid before we
+      // publish a checksum for it.
+      if (this.pacer) this.pacer.flush();
       this._initAuthoritySlots();
       this._broadcastRoster();
       this._send({ k: 'state-hdr', version: this.grid.version, checksum: this.grid.checksum(), seq: this.lamport });
@@ -189,7 +194,9 @@ export class Room extends Emitter {
   /** Broadcast an op that has already been applied locally. */
   sendOp(indices, colorIdx, seq) {
     if (!indices || !indices.length) return 0;
-    return this._send({ k: 'op', c: colorIdx, seq, cells: indicesToB64(indices) });
+    // Room time at send, so the receiver can replay our rhythm instead of our
+    // packet timing. See net/pacer.js.
+    return this._send({ k: 'op', c: colorIdx, seq, rt: this.clock.now(), cells: indicesToB64(indices) });
   }
 
   /** Paint a run of cells and tell the room, in one step. */
@@ -202,6 +209,7 @@ export class Room extends Emitter {
 
   clear() {
     const seq = this.nextSeq();
+    this._dropPaced();
     this.grid.clearAll(seq, this.me.slot || 0);
     this.emit('grid', { local: true, cleared: true });
     this._send({ k: 'clear', seq });
@@ -212,6 +220,7 @@ export class Room extends Emitter {
     const seq = this.nextSeq();
     this.room = { ratio, level };
     const d = dimsFor(ratio, level);
+    this._dropPaced();
     this.grid.resize(d.w, d.h);
     this.grid.clearAll(seq, this.me.slot || 0);
     this.emit('grid', { local: true, cleared: true, resized: true });
@@ -365,12 +374,30 @@ export class Room extends Emitter {
   _onOp(msg, slot) {
     if (msg.from === this.me.clientId) return; // already applied locally
     const cells = b64ToIndices(msg.cells);
-    const changed = this.grid.paint(cells, msg.c | 0, msg.seq | 0, slot);
+    if (!cells.length) return;
+    // Guests pace remote strokes so they draw in like they were drawn. The
+    // authority applies them straight away: its grid is what every checksum and
+    // every late joiner is measured against, and a host sitting 90 ms behind
+    // the wire would look desynced to the whole room.
+    if (this.pacer && !this.authority) return this.pacer.add(cells, msg, slot);
+    this.paintRemote(cells, msg.c | 0, msg.seq | 0, slot);
+  }
+
+  /** Apply someone else's cells to our grid, without rebroadcasting. */
+  paintRemote(cells, colorIdx, seq, slot) {
+    const changed = this.grid.paint(cells, colorIdx, seq, slot);
     if (changed) this.emit('grid', { local: false, changed });
+    return changed;
+  }
+
+  /** The board just got replaced wholesale - anything still queued is stale. */
+  _dropPaced() {
+    if (this.pacer) this.pacer.drop();
   }
 
   _onClear(msg, slot) {
     if (msg.from === this.me.clientId) return;
+    this._dropPaced();
     this.grid.clearAll(msg.seq | 0, slot);
     this.emit('grid', { local: false, cleared: true });
   }
@@ -380,6 +407,7 @@ export class Room extends Emitter {
     if (!isValidRatio(msg.ratio)) return;
     this.room = { ratio: msg.ratio, level: clampLevel(msg.level) };
     const d = dimsFor(this.room.ratio, this.room.level);
+    this._dropPaced();
     this.grid.resize(d.w, d.h);
     this.grid.clearAll(msg.seq | 0, slot);
     this.emit('grid', { local: false, cleared: true, resized: true });
@@ -388,6 +416,7 @@ export class Room extends Emitter {
 
   _onSnapshot(msg) {
     try {
+      this._dropPaced();
       this.grid.applySnapshot(msg);
       if (typeof msg.seq === 'number' && msg.seq > this.lamport) this.lamport = msg.seq;
       this.emit('grid', { local: false, snapshot: true });

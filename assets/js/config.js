@@ -69,6 +69,17 @@ export const CONFIG = {
     joinTimeoutMs: 15000,
   },
 
+  /**
+   * Remote strokes only: how long a burst waits, and how long it then takes to
+   * paint in. Raise delayMs for a laggy link, lower it if the lag bothers you.
+   * Your own drawing is never delayed by any of this.
+   */
+  smooth: {
+    delayMs: Number(setting('smoothDelay', 'smoothDelay', 90)),
+    spreadMs: Number(setting('smoothSpread', 'smoothSpread', 55)),
+    backlogCells: Number(setting('smoothBacklog', 'smoothBacklog', 900)),
+  },
+
   limits: {
     nickMin: 2,
     nickMax: 16,

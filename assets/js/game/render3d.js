@@ -16,7 +16,10 @@
 import { panelsFor } from './model3d.js';
 
 const RAD = Math.PI / 180;
-const LIGHT = norm3([0.35, 0.55, 0.9]);
+// Roughly along the default camera, so the face you are looking at comes out
+// white and only the sides fall away. The old [0.35,0.55,0.9] peaked at 0.72 on
+// every panel, which is why the garment read as dark whatever the shading did.
+const LIGHT = norm3([0.14, 0.24, 0.96]);
 
 function norm3(v) {
   const l = Math.hypot(v[0], v[1], v[2]) || 1;
@@ -45,6 +48,10 @@ function bilerp(c, u, v) {
 /** Roll about Z, pitch about X, yaw about Y - in that order. */
 function orient(p, yaw, pitch, roll) {
   let [x, y, z] = p;
+  // A panel with no rotation still has to come back as numbers: the guards
+  // below skip the maths when an angle is zero, and a caller that measures the
+  // result would otherwise see NaN.
+  if (!x && !y && !z) return [0, 0, 0];
   if (roll) {
     const c = Math.cos(roll * RAD);
     const s = Math.sin(roll * RAD);
@@ -112,7 +119,14 @@ export class Preview3D {
       // Half of the face's own cell grid, at least 3 cuts: enough that the
       // affine approximation stays under half a pixel of error.
       const n = Math.max(3, Math.min(8, Math.round(Math.max(fw, fh) / 10)));
-      const lit = 0.62 + 0.38 * Math.abs(dot3(normal, LIGHT));
+      // White cloth under warm light: a face turned away from the lamp is grey,
+      // never brown. The old 0.62 floor multiplied a near-black shade into the
+      // pixels and turned the whole garment dark green.
+      const facing = Math.abs(dot3(normal, LIGHT));
+      // Two thirds of the brightness comes from the paint itself, so a white
+      // face stays brighter than the backdrop at every angle instead of sinking
+      // into it as the panel turns.
+      const lit = 0.66 + 0.34 * facing;
       // The silhouette rides along as a polygon in model space and is clipped
       // once per panel at draw time. Cutting the quad grid to one quad per cell
       // would need 15,000+ triangles on a dress, and every triangle repaints the
@@ -124,6 +138,8 @@ export class Preview3D {
           const u1 = (ix + 1) / n;
           const v0 = iy / n;
           const v1 = (iy + 1) / n;
+          // The face id travels with the triangle so the texture can be re-baked
+          // in place when the paint changes.
           tri(tris, bilerp(corners, u0, v0), bilerp(corners, u1, v0), bilerp(corners, u1, v1),
             [u0 * face.w, v0 * face.h], [u1 * face.w, v0 * face.h], [u1 * face.w, v1 * face.h], tex, lit, loop, face.id);
           tri(tris, bilerp(corners, u0, v0), bilerp(corners, u1, v1), bilerp(corners, u0, v1),
@@ -158,8 +174,26 @@ export class Preview3D {
     return this._cache.get(face.id);
   }
 
+  /** Forget the baked textures so the next build pulls fresh ones. */
   invalidate() {
     this._cache.clear();
+  }
+
+  /**
+   * Re-bake every face texture from the live grid.
+   *
+   * Clearing the cache alone is not enough: each triangle already holds the
+   * canvas it was built from, so a stroke would only show up after a full
+   * rebuild. This swaps the texture in place, which is cheap enough to run on
+   * every paint.
+   */
+  refresh() {
+    this._cache.clear();
+    for (const t of this._tris) {
+      if (!this._cache.has(t.face)) this._cache.set(t.face, this.texture(t.face));
+      const tex = this._cache.get(t.face);
+      if (tex) t.tex = tex;
+    }
   }
 
   render() {
@@ -174,17 +208,45 @@ export class Preview3D {
       cv.height = h;
     }
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.clearRect(0, 0, w, h);
+    // Studio backdrop, a mid grey. It has to sit *between* the garment's two
+    // extremes: a face square to the lamp measures about 235 and a turned one
+    // about 160, so a backdrop at 202 makes the lit side read white and the
+    // shaded side read solid. Near-white here made the whole garment look grey.
+    ctx.fillStyle = '#c2ccd3';
+    ctx.fillRect(0, 0, w, h);
     if (!this._tris.length) return;
 
-    const focal = 0.95 * Math.min(w, h) * this.zoom;
-    const dist = this.radius * 2.7;
+    // Frame the model, don't just pick a distance. At cell units a garment
+    // radius is 100-200 while the old fixed focal put it at 2-3% of the panel,
+    // which is why the preview looked like a speck on a grey field.
+    //
+    // Fit against the model's own box, not a bounding sphere: a dress is 168
+    // cells wide and a trousers face is 116 tall, and a single radius would
+    // leave one of them stranded in the middle of the panel.
+    // Fit against the model's axis-aligned box, not a bounding sphere: a dress
+    // is 168 cells wide and a trousers face is 116 tall, and one shared radius
+    // would leave whichever axis is shorter stranded in the middle.
+    //
+    // Read the triangle list locally. this._tris is only assigned at the end of
+    // build(), so a first render before any build would size the focal off an
+    // empty box.
+    const tris = this._tris;
+    const ext = this._aabb(tris);
+    // Far enough back that the near edge of the model is not clipped by the
+    // camera's minimum depth.
+    // ext.z is the front of the model toward the camera, so the camera has to
+    // sit behind it by more than the near-plane limit.
+    const dist = Math.max(ext.z + 2 + Math.hypot(ext.x, ext.y) * 1.15, 1);
+    const focal = Math.min(
+      (0.85 * w) / (2 * ext.x),
+      (0.85 * h) / (2 * ext.y)
+    ) * dist * this.zoom;
     const view = [];
     for (const t of this._tris) {
-      const p = this._project(t.a, dist, focal, w, h);
+      const p = this._project(t.a, dist, focal, w, h, ext);
       if (!p) continue;
-      const q = this._project(t.b, dist, focal, w, h);
-      const r = this._project(t.c, dist, focal, w, h);
+      const q = this._project(t.b, dist, focal, w, h, ext);
+      const r = this._project(t.c, dist, focal, w, h, ext);
       if (!q || !r) continue;
       view.push({ t, p, q, r, z: (t.a2 + t.b2 + t.c2) / 3 });
     }
@@ -204,7 +266,7 @@ export class Preview3D {
       }
       let pts = clips.get(loop);
       if (!pts) {
-        pts = loop.map((p) => this._project(p, dist, focal, w, h));
+        pts = loop.map((p) => this._project(p, dist, focal, w, h, ext));
         if (pts.some((p) => !p)) pts = null;
         clips.set(loop, pts);
       }
@@ -220,12 +282,53 @@ export class Preview3D {
     }
   }
 
-  _project(p, dist, focal, w, h) {
+  _project(p, dist, focal, w, h, off) {
     const [x, y, z] = orient(p, this.yaw, this.pitch, 0);
     const depth = dist - z;
     if (depth < 1) return null;
     const f = focal / depth;
-    return [w / 2 + x * f, h / 2 - y * f, z];
+    // Centre the model's own box, not the origin: sleeves and hems sit far off
+    // centre, and framing the origin left the garment stranded in a corner.
+    return [w / 2 + (x - off.cx) * f, h / 2 - (y - off.cy) * f, z];
+  }
+
+  /**
+   * The model's axis-aligned box in view space. Framing needs each axis on its
+   * own: a garment that is wide and shallow has to be fitted by its width, not
+   * by the largest distance from the centre.
+   */
+  _aabb(tris) {
+    let mx = -Infinity;
+    let nx = Infinity;
+    let my = -Infinity;
+    let ny = Infinity;
+    let mz = -Infinity;
+    let nz = Infinity;
+    let seen = 0;
+    for (const t of tris) {
+      for (const v of [t.a, t.b, t.c]) {
+        // orient() returns [x, y, z] with y up; the camera looks down z.
+        const [px, py, depth] = orient(v, this.yaw, this.pitch, 0);
+        if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(depth)) continue;
+        seen++;
+        mx = Math.max(mx, px);
+        nx = Math.min(nx, px);
+        my = Math.max(my, py);
+        ny = Math.min(ny, py);
+        mz = Math.max(mz, depth);
+        nz = Math.min(nz, depth);
+      }
+    }
+    if (!seen) return { x: 1, y: 1, z: 0, cx: 0, cy: 0, cz: 0 };
+    return {
+      x: Math.max((mx - nx) / 2, 1),
+      y: Math.max((my - ny) / 2, 1),
+      cx: (mx + nx) / 2,
+      cy: (my + ny) / 2,
+      // Depth is not framed, only kept clear of the camera's near limit.
+      z: Math.max(mz - nz, 0),
+      cz: (mz + nz) / 2,
+    };
   }
 
   orbit(dx, dy) {
@@ -278,8 +381,10 @@ function drawTri(ctx, p, q, r, u, v, w2, tex, lit) {
   ctx.restore();
 
   if (lit < 1) {
+    // Grey, not brown: multiply-style darkening of a white garment has to stay
+    // neutral or the model reads as the wrong colour entirely.
     path(ctx, p, q, r);
-    ctx.fillStyle = `rgba(24,16,9,${((1 - lit) * 0.8).toFixed(3)})`;
+    ctx.fillStyle = `rgba(0,0,0,${(1 - lit).toFixed(3)})`;
     ctx.fill();
   }
 }

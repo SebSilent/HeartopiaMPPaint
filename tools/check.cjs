@@ -470,6 +470,17 @@ async function stagePanels(browser, errors) {
   });
   ok('a garment shows one tab per face', !tabs.hidden && tabs.n >= 2, JSON.stringify(tabs));
 
+  const natives = await page.evaluate(() => {
+    const card = document.querySelector('#fItems .item-card');
+    const tab = document.querySelector('#faces .face');
+    return { card: card ? card.textContent : '', tabTitle: tab ? tab.getAttribute('title') : '' };
+  });
+  ok(
+    'the picker shows the game\'s own slot name',
+    /Tシャツ/.test(natives.card) && /フロント/.test(natives.tabTitle),
+    JSON.stringify(natives)
+  );
+
   await page.evaluate(() => document.querySelectorAll('#faces .face')[1].click());
   await page.waitForTimeout(250);
   const active = await page.evaluate(() => {

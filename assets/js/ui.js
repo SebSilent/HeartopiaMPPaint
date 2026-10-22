@@ -233,7 +233,9 @@ export class UI {
     e.itemPick.innerHTML = CATALOG[fam]
       .map(
         (i) =>
-          `<button class="item-chip" data-item="${i.id}" title="${i.faces.length} faces · ${cellTotal(i).toLocaleString()} cells">${escapeHtml(
+          `<button class="item-chip" data-item="${i.id}" title="${i.native ? escapeHtml(i.native) + ' · ' : ''}${
+            i.faces.length
+          } faces · ${cellTotal(i).toLocaleString()} cells">${escapeHtml(
             i.name
           )}<b>${i.faces.length}</b></button>`
       )
@@ -498,7 +500,9 @@ export class UI {
           .map((p) => `<i class="who" style="--c:${escapeHtml(p.color)}" title="${escapeHtml(p.nick)}"></i>`)
           .join('');
         const more = who.length > 4 ? `<i class="who more">+${who.length - 4}</i>` : '';
-        return `<button class="face ${i === active ? 'active' : ''}" data-face="${i}" title="${f.w} × ${f.h} cells">
+        return `<button class="face ${i === active ? 'active' : ''}" data-face="${i}" title="${f.native ? escapeHtml(f.native) + ' · ' : ''}${
+          f.w
+        } × ${f.h} cells">
           ${escapeHtml(f.label)}<b>${f.w}×${f.h}</b>${dots ? `<span class="who-row">${dots}${more}</span>` : ''}</button>`;
       })
       .join('');
@@ -751,7 +755,9 @@ export class UI {
       items.innerHTML = CATALOG[state.family]
         .map(
           (i) =>
-            `<button class="item-card" data-item="${i.id}"><b>${escapeHtml(i.name)}</b><span>${i.faces
+            `<button class="item-card" data-item="${i.id}"><b>${escapeHtml(i.name)}</b><span>${
+              i.native ? escapeHtml(i.native) + ' · ' : ''
+            }${i.faces
               .map((f) => `${f.w}×${f.h}`)
               .join(' · ')}</span></button>`
         )

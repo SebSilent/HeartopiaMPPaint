@@ -62,8 +62,11 @@ export class Room extends Emitter {
     this.detail = '';
     this.authority = false;
     this.transport = null;
-    // Set by the browser only: paces how remote strokes reach the grid.
-    this.pacer = null;
+    // Set by the browser only: a lagging copy of the grid, for smooth strokes.
+    this.display = null;
+    // Transport connection id -> clientId. Only a message carrying a real
+    // clientId tells us who is on the other end of a link.
+    this._connOwners = new Map();
     this._factory = transportFactory;
     this._roster = new Map();
     // slot 0 is reserved (it marks snapshot baselines), players start at 1
@@ -128,9 +131,9 @@ export class Room extends Emitter {
     if (now) {
       // We inherited the room (host left, we won the re-claim race). Keep the
       // roster we already have and take over numbering from it.
-      // Everything we were still animating has to be on the grid before we
-      // publish a checksum for it.
-      if (this.pacer) this.pacer.flush();
+      // Stop animating and match the truth exactly, before publishing a
+      // checksum for it.
+      if (this.display) this.display.sync();
       this._initAuthoritySlots();
       this._broadcastRoster();
       this._send({ k: 'state-hdr', version: this.grid.version, checksum: this.grid.checksum(), seq: this.lamport });
@@ -187,6 +190,8 @@ export class Room extends Emitter {
   /** Apply to our own grid without broadcasting (local prediction). */
   paintLocal(indices, colorIdx, seq) {
     const changed = this.grid.paint(indices, colorIdx, seq, this.me.slot || 0);
+    // Your own pen is never made to wait for a schedule.
+    if (this.display) this.display.reveal(indices);
     if (changed) this.emit('grid', { local: true, changed });
     return changed;
   }
@@ -195,7 +200,7 @@ export class Room extends Emitter {
   sendOp(indices, colorIdx, seq) {
     if (!indices || !indices.length) return 0;
     // Room time at send, so the receiver can replay our rhythm instead of our
-    // packet timing. See net/pacer.js.
+    // packet timing. See net/display.js.
     return this._send({ k: 'op', c: colorIdx, seq, rt: this.clock.now(), cells: indicesToB64(indices) });
   }
 
@@ -209,8 +214,8 @@ export class Room extends Emitter {
 
   clear() {
     const seq = this.nextSeq();
-    this._dropPaced();
     this.grid.clearAll(seq, this.me.slot || 0);
+    this._dropPaced();
     this.emit('grid', { local: true, cleared: true });
     this._send({ k: 'clear', seq });
   }
@@ -220,9 +225,9 @@ export class Room extends Emitter {
     const seq = this.nextSeq();
     this.room = { ratio, level };
     const d = dimsFor(ratio, level);
-    this._dropPaced();
     this.grid.resize(d.w, d.h);
     this.grid.clearAll(seq, this.me.slot || 0);
+    this._dropPaced();
     this.emit('grid', { local: true, cleared: true, resized: true });
     this._send({ k: 'board', ratio, level, seq });
     this.emit('board', { ...this.room });
@@ -258,7 +263,22 @@ export class Room extends Emitter {
   handle(msg, fromId) {
     if (!msg || typeof msg !== 'object') return;
     if (typeof msg.seq === 'number' && msg.seq > this.lamport) this.lamport = msg.seq;
-    const slot = typeof msg.slot === 'number' ? msg.slot : this._slotOf(msg.from || fromId);
+    const id = msg.from || fromId;
+    const slot = typeof msg.slot === 'number' ? msg.slot : this._slotOf(id);
+
+    if (this.authority && id && id !== this.me.clientId) {
+      // Liveness is traffic. Without this, a connected player who stops moving
+      // for 24 s is swept off the roster and only comes back when they paint.
+      const e = this._roster.get(id);
+      if (e) e.seen = Date.now();
+      // A link is not a person. A guest's own packets carry its clientId while
+      // `fromId` is the transport's id for the connection, so this is where the
+      // two get tied together - and the only place we can learn it.
+      //
+      // Transport events (peer-gone) arrive with both set to the link id, so
+      // guard on the id *differing*, not on there being a `from`.
+      if (fromId && fromId !== id) this._connOwners.set(fromId, id);
+    }
 
     switch (msg.k) {
       case 'hello':
@@ -298,9 +318,12 @@ export class Room extends Emitter {
       case 'bye':
         return this._dropClient(msg.from || fromId);
       case 'peer-hello':
-        return this.authority ? this._onHello(msg.id, {}) : undefined;
+        // A connection opened. That is not a player: roster entries are only
+        // ever made from messages carrying a real clientId. Creating one here
+        // put a nameless 'guest' beside every human in the room.
+        return;
       case 'peer-gone':
-        return this.authority ? this._dropClient(msg.id) : undefined;
+        return this.authority ? this._dropConn(msg.id) : undefined;
       default:
         return;
     }
@@ -375,12 +398,12 @@ export class Room extends Emitter {
     if (msg.from === this.me.clientId) return; // already applied locally
     const cells = b64ToIndices(msg.cells);
     if (!cells.length) return;
-    // Guests pace remote strokes so they draw in like they were drawn. The
-    // authority applies them straight away: its grid is what every checksum and
-    // every late joiner is measured against, and a host sitting 90 ms behind
-    // the wire would look desynced to the whole room.
-    if (this.pacer && !this.authority) return this.pacer.add(cells, msg, slot);
-    this.paintRemote(cells, msg.c | 0, msg.seq | 0, slot);
+    // Truth first, on every machine: the grid always matches the wire the
+    // instant a packet lands, so checksums and snapshots stay correct whether
+    // or not anything is still being animated.
+    const changed = this.paintRemote(cells, msg.c | 0, msg.seq | 0, slot);
+    // Then the screen, which is allowed to take its time catching up.
+    if (this.display && changed) this.display.add(cells, msg);
   }
 
   /** Apply someone else's cells to our grid, without rebroadcasting. */
@@ -390,15 +413,15 @@ export class Room extends Emitter {
     return changed;
   }
 
-  /** The board just got replaced wholesale - anything still queued is stale. */
+  /** The board was replaced wholesale: nothing to animate, match it now. */
   _dropPaced() {
-    if (this.pacer) this.pacer.drop();
+    if (this.display) this.display.sync();
   }
 
   _onClear(msg, slot) {
     if (msg.from === this.me.clientId) return;
-    this._dropPaced();
     this.grid.clearAll(msg.seq | 0, slot);
+    this._dropPaced();
     this.emit('grid', { local: false, cleared: true });
   }
 
@@ -407,18 +430,19 @@ export class Room extends Emitter {
     if (!isValidRatio(msg.ratio)) return;
     this.room = { ratio: msg.ratio, level: clampLevel(msg.level) };
     const d = dimsFor(this.room.ratio, this.room.level);
-    this._dropPaced();
     this.grid.resize(d.w, d.h);
     this.grid.clearAll(msg.seq | 0, slot);
+    this._dropPaced();
     this.emit('grid', { local: false, cleared: true, resized: true });
     this.emit('board', { ...this.room });
   }
 
   _onSnapshot(msg) {
     try {
-      this._dropPaced();
       this.grid.applySnapshot(msg);
       if (typeof msg.seq === 'number' && msg.seq > this.lamport) this.lamport = msg.seq;
+      // A snapshot is the whole truth: the screen stops animating and matches it.
+      this._dropPaced();
       this.emit('grid', { local: false, snapshot: true });
       this.emit('sync', { ok: true });
     } catch (e) {
@@ -456,10 +480,19 @@ export class Room extends Emitter {
 
   _dropClient(clientId) {
     if (!clientId) return;
+    for (const [conn, owner] of this._connOwners) if (owner === clientId) this._connOwners.delete(conn);
     this.emit('leave', { id: clientId });
     if (!this.authority || !this._roster.has(clientId)) return;
     this._roster.delete(clientId);
     this._broadcastRoster();
+  }
+
+  /** A link closed: evict whoever was talking over it, not the link's own id. */
+  _dropConn(transportId) {
+    if (!transportId) return;
+    const clientId = this._connOwners.get(transportId);
+    this._connOwners.delete(transportId);
+    if (clientId) this._dropClient(clientId);
   }
 
   _tick() {

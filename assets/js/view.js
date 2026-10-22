@@ -35,6 +35,11 @@ export class View {
     this.onResize = null;
     /** Called whenever the camera scale changes, from any source. */
     this.onZoom = null;
+    /**
+     * A lagging copy of the grid (see net/display.js). When set, the screen
+     * paints from it; grid.color stays the room's truth for everything else.
+     */
+    this.display = null;
     this.rebuildStateCanvas();
   }
 
@@ -173,8 +178,8 @@ export class View {
     ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.restore();
 
-    // pixels
-    g.fillRGBA(this._u32);
+    // pixels - from the display copy, which may be a moment behind the grid
+    g.fillRGBA(this._u32, this.display ? this.display.cells : null);
     this._sctx.putImageData(this._image, 0, 0);
     ctx.imageSmoothingEnabled = false; // Heartopia boards are pixel art
     ctx.drawImage(this._state, r.x, r.y, r.w, r.h);

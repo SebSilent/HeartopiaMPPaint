@@ -153,11 +153,14 @@ export class Grid {
   /**
    * Fill a Uint32 view of an RGBA buffer from the palette.
    * Little-endian packing: byte0=R, byte1=G, byte2=B, byte3=A.
+   * @param {Uint8Array} [cells] another cell buffer of the same size, so the
+   *   screen can show a lagging copy while `color` stays the room's truth.
    */
-  fillRGBA(u32) {
+  fillRGBA(u32, cells) {
+    const src = cells || this.color;
     const table = Grid._rgbaTable || (Grid._rgbaTable = buildRGBATable());
     const n = Math.min(this.n, u32.length);
-    for (let i = 0; i < n; i++) u32[i] = table[this.color[i]];
+    for (let i = 0; i < n; i++) u32[i] = table[src[i]];
   }
 }
 

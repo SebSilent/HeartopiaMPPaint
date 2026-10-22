@@ -134,8 +134,14 @@
       <span class="dock-label">Shade</span>
       <div id="currentColor" class="current-color">#000000</div>
     </div>
-    <div id="groups" class="groups"></div>
-    <div id="swatches" class="swatches"></div>
+    <section class="palette notch" aria-labelledby="paletteTitle">
+      <header class="palette-head">
+        <h2 id="paletteTitle">Palette</h2>
+        <span class="palette-note">13 groups · 125 shades</span>
+      </header>
+      <div id="groups" class="groups" role="group" aria-label="Colour groups"></div>
+      <div id="swatches" class="swatches" role="group" aria-label="Shades"></div>
+    </section>
   </aside>
 </div>
 

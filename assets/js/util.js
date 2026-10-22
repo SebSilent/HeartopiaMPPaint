@@ -5,7 +5,16 @@ export const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
 export const nowMs = () => Date.now();
 
 /** Room codes avoid I/O/0/1 so they survive being read out loud or typed on a phone. */
+// 31 characters: no I (looks like 1) and no O/0.
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+/**
+ * Seven of those is 27.5 billion codes. That is not decoration: room codes are
+ * the only thing separating two people's boards, and a code that happens to be
+ * taken does not error - it quietly drops you into a stranger's painting. At
+ * 10,000 rooms in circulation the chance of any two colliding is about 0.2%;
+ * at the old five characters it was over 80%.
+ */
+const CODE_LEN = 7;
 
 function randomBytes(n) {
   const b = new Uint8Array(n);
@@ -14,7 +23,7 @@ function randomBytes(n) {
   return b;
 }
 
-export function makeRoomCode(len = 5) {
+export function makeRoomCode(len = CODE_LEN) {
   const buf = randomBytes(len);
   let s = '';
   for (const b of buf) s += CODE_ALPHABET[b % CODE_ALPHABET.length];

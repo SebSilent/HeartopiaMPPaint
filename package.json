@@ -16,9 +16,14 @@
   },
   "comments": {
     "ws": "Only needed for the optional relay server and its tests. The website itself has no build step and no dependencies.",
-    "run": "node server/relay.js must be run from the repo root - it imports the shared canvas model from assets/js/."
+    "run": "node server/relay.js must be run from the repo root - it imports the shared canvas model from assets/js/.",
+    "playwright": "dev-only, and not used by `npm test`. It backs the throwaway layout/behaviour probes in _research/, which drive a real browser because some bugs are only measurable in one. `npx playwright install chromium` once.",
+    "port": "tools/serve.cjs reads the PORT env var, default 8080. On this machine 8080 is already taken by an unrelated app that answers on both localhost and 127.0.0.1 - use PORT=8099."
   },
   "dependencies": {
     "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.61.0"
   }
 }

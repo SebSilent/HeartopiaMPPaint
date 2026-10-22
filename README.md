@@ -1,65 +1,134 @@
 # Heartopia Multiplayer Paint
 
-Paint together on one shared board.
+Paint on the same board as other people at the same time.
 
-**→ https://sebsilent.github.io/HeartopiaMPPaint/**
+Live site: https://sebsilent.github.io/HeartopiaMPPaint/
 
-Pick a nickname, get a room code, send it to people. Everyone paints at once, live.
+You pick a nickname, you get a room code, you send the code to people. Everyone
+who opens it with that code is on the same board, and everyone can see everyone
+else's cursor while they draw.
+
+## Using it
+
+1. Type a nickname. Two characters minimum. Nothing else works until you do,
+   because other players see that name on the board.
+2. Copy the room code from the top bar and send it to people.
+3. Pick a thing to paint on (a canvas, a garment, a piece of furniture, the
+   book), pick a shade, draw.
+
+`?local=1` opens a single-player board that never touches the network.
 
 ## What it does
 
-- **The real Heartopia palette** — 13 groups, 125 shades: black, grey, white, brown, red, orange,
-  yellow, green, cyan, blue, purple, pink, special
-- **Everything you can design in the game.** Canvases, 11 garments, 10 pieces of furniture, and the
-  book — each with its own faces, tabbed. A T-shirt is four boards, not one, and it looks like that.
-- **Everyone's cursor on the board**, drawn as a touch, a pen or a mouse, moving in real time
-- **Paint on a face someone else is standing on** — the tab shows who
-- **Pinch to zoom, two fingers to pan** — rest your hand on the screen
-- **Apple Pencil aware** — touches stop painting while the pen is down
-- Brush, eraser, eyedropper, bucket, line, rectangle, ellipse, triangle, star, heart, arrow, spray,
-  polygon, select, mirror · four brush sizes · square or round tip
-- **Undo and redo, one step per stroke** — and it travels, so the room loses the same stroke
-- **Blueprint mode** — blocks, numbered shades, and a legend that says what is left to key in
-- **Photo import** — quantised to the palette, colours merged down until it is buildable
-- **Screenshot import** — finds the grid in a game screenshot and lifts the colours out of it
-- **3D preview** — every face where the game puts it, at its real proportions
-- **PNG export at the board's exact pixel size**, ready to copy into the game
-- **Phone, tablet, desktop. Nothing to install.**
+* The real Heartopia palette: 13 groups, 125 shades. Index 0 is left empty so
+  "no paint" stays distinguishable from white.
+* Every paintable surface in the game: 11 clothing items, 10 furniture items and
+  the book, 51 faces in total. A T-shirt is four separate boards and the app
+  shows them as tabs, because that is what it is in the game.
+* Live cursors for every player, drawn as a finger, a pen or a mouse depending on
+  what they are actually using.
+* Touch, Apple Pencil and mouse all work. Pinch zooms, two fingers pan, and a
+  resting hand does not paint while the pen is down.
+* Brush, eraser, eyedropper, bucket, line, rectangle, ellipse, triangle, star,
+  heart, arrow, spray, polygon and select. Four brush sizes, square or round tip.
+* Undo and redo, one step per stroke.
+* Photo import, quantised to the palette and merged down until it is buildable.
+* Screenshot import: give it a picture of the game's grid and it finds the grid,
+  reads the colours out of it and puts them on your board.
+* Blueprint mode: numbered blocks and a legend for what still needs keying in.
+* 3D preview at the game's real proportions.
+* PNG export at the board's exact pixel size, for copying back into the game.
+* Phone, tablet and desktop. No install, no account.
 
-## The slots
+## Board sizes
 
 | Ratio | S | M | L | XL |
 |---|---|---|---|---|
-| 16:9 | 30×18 | 50×28 | 100×56 | 150×84 |
-| 4:3 | 30×24 | 50×38 | 100×76 | 150×114 |
-| 1:1 | 30×30 | 50×50 | 100×100 | 150×150 |
-| 3:4 | 24×30 | 38×50 | 76×100 | 114×150 |
-| 9:16 | 18×30 | 28×50 | 56×100 | 84×150 |
+| 16:9 | 30x18 | 50x28 | 100x56 | 150x84 |
+| 4:3 | 30x24 | 50x38 | 100x76 | 150x114 |
+| 1:1 | 30x30 | 50x50 | 100x100 | 150x150 |
+| 3:4 | 24x30 | 38x50 | 76x100 | 114x150 |
+| 9:16 | 18x30 | 28x50 | 56x100 | 84x150 |
 
-A dress is 102×154 + 76×154 + 168×102. A cap is three faces. The duvet on a double bed is 256×128.
-All 51 of them are in the app.
+Garments and furniture have their own fixed sizes instead. A dress is 102x154,
+76x154 and 168x102 across its three faces. The largest single face is the top of
+a double bed's duvet, 256x128.
 
 ## Keys
 
-`B` brush · `E` eraser · `I` eyedropper · `F` bucket · `L` line · `R` rect · `O` ellipse · `V` select
-`[` `]` brush size · `M` mirror · `G` grid · `.` tick a block · `0` fit · `+` `−` zoom
-`Space`-drag pan · `Ctrl+Z` undo · `Ctrl+Y` redo · `Ctrl+S` export
-
-`?local=1` opens a board that never touches the network.
+| Key | Action |
+|---|---|
+| B | brush |
+| E | eraser |
+| I | eyedropper |
+| F | bucket |
+| L | line |
+| R | rectangle |
+| O | ellipse |
+| V | select |
+| `[` `]` | brush size |
+| M | mirror |
+| G | grid |
+| `.` | tick a blueprint block |
+| 0 | fit to screen |
+| `+` `-` | zoom |
+| Space, drag | pan |
+| Ctrl+Z | undo |
+| Ctrl+Y | redo |
+| Ctrl+S | export |
 
 ## Running it
 
-GitHub Pages serves plain files, so the site itself needs no build: push, done.
+GitHub Pages serves plain files, so the site itself needs no build step.
 
 ```bash
-npm run dev          # http://localhost:8080
-npm test             # 131 checks
+npm install
+npm run dev            # http://localhost:8080
+npm test               # unit tests
 ```
 
-Rooms are serverless by default — the first player in a code hosts it over WebRTC. For bigger rooms
-or a link that works no matter who is holding it, run the small relay and point the site at it:
+The checks in `tools/` drive a real browser and need Playwright:
+
+```bash
+node tools/check.cjs         # boot, paint, zoom, panels, two players, touch
+node tools/check-import.cjs  # photo and screenshot import, end to end
+node tools/check-live.cjs    # the published site, three players, WebRTC
+```
+
+## How the networking works
+
+By default there is no server to run. The first player in a room code claims that
+code as a WebRTC peer and hosts it; anyone who finds it taken joins as a guest.
+This is what makes the whole thing deployable as static files on GitHub Pages.
+
+If you want a room that survives the host closing their tab, or a room bigger
+than a few people, run the small relay instead and point the page at it:
 
 ```bash
 npm run relay
-# then, in index.html:  relayUrl: 'wss://your-host/'
 ```
+
+Then open the site with `?relay=wss://your-host/`. `render.yaml` is there if you
+want to put that relay on Render.
+
+## Known limits
+
+* The default setup uses the free public PeerJS broker. It is shared with
+  everyone else on it. If rooms stop forming, the first thing to suspect is the
+  broker, and the fix is to run the relay above.
+* Only STUN is configured. Most home and mobile connections are fine with that.
+  A player behind symmetric NAT may not connect, and would need a TURN server
+  added to `assets/js/config.js`.
+* On the serverless transport the room depends on one player's tab. When that tab
+  closes, the others notice after about twelve seconds, race for the room id, and
+  one of them takes over. It works, tested with three players, but anything drawn
+  during those seconds is dropped, because there is momentarily nobody to receive
+  it. The relay does not have this gap.
+* Room codes are not passwords. Anyone who has the code can paint on it.
+
+## Palette and sizes: where they came from
+
+The colour groups, shade values and board dimensions are taken from Heartopia
+itself, cross-checked against the community reference at
+https://zerochansy.github.io/Heartopia-Painting-Tools/ so that a board built here
+matches what the game will actually accept.

@@ -24,9 +24,9 @@ async function join(browser, nick) {
   page.on('console', (m) => {
     if (m.type() !== 'error') return;
     const t = m.text();
-    // Claiming the room and finding it taken is how a guest joins. PeerJS logs
-    // it as an error on the way, and it is not a fault in what we built.
-    if (/PeerJS/.test(t)) return;
+    // Nothing is filtered any more. A guest failing to claim the room id is
+    // normal, but it used to be printed as a console error, which is what a
+    // visitor reads as a crash. Silence is now part of what this checks.
     errors.push(`${nick} console: ${t}`);
   });
   await page.goto(`${BASE}?room=${ROOM}`, { waitUntil: 'load', timeout: 60000 });

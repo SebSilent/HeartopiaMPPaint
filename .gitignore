@@ -7,6 +7,9 @@ _research/
 # impeccable detector state
 .impeccable/
 
+# local-only roadmap, not part of the published site
+PLAN.md
+
 # logs / os noise
 *.log
 npm-debug.log*

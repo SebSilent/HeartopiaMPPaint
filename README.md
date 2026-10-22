@@ -7,9 +7,10 @@ other's cursors move. Phone, tablet, desktop, stylus, all fine. Nothing to insta
 
 ## It's the real palette
 
-13 colour groups, 125 shades, and the exact board sizes the game uses. Not eyeballed: pulled from
+[Heartopia](https://heartopia.xd.com/) painting boards use 13 colour groups, 125 shades, and fixed
+grid sizes. None of it is eyeballed here: it is lifted from
 [Heartopia Painting Tools](https://zerochansy.github.io/Heartopia-Painting-Tools/), which mirrors the
-game's own data. `node tools/verify_palette.cjs` diffs our copy against theirs and says so.
+game's own data, and `node tools/verify_palette.cjs` diffs our copy against theirs to prove it.
 
 | Ratio | S | M | L | XL |
 |---|---|---|---|---|
@@ -60,4 +61,4 @@ bigger than one laptop can carry. Deploy it (there's a `render.yaml`), then set 
 ## Also
 
 Design is checked with [Impeccable](https://impeccable.style): `npx impeccable detect index.html`.
-Not affiliated with the game. Licence: none chosen yet.
+Not affiliated with [the game](https://heartopia.xd.com/). Licence: none chosen yet.

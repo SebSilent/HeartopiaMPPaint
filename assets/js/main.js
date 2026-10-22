@@ -61,6 +61,7 @@ const actions = {
     ui.setBrush(s);
     state.brush = s;
   },
+  setColor: (idx) => ui.setColorIdx(idx),
   setGridVisible: (v) => {
     if (view) view.showGrid = v;
   },
@@ -149,15 +150,21 @@ function mount(room) {
   });
   cursors = new Cursors({ room });
   view.onFrame((ctx, v) => cursors.draw(ctx, v));
+  // One hook covers wheel, pinch, buttons and fit, so the readout can never
+  // disagree with the camera.
+  view.onZoom = (percent) => ui.setZoom(percent);
   input = new Input({
     room,
     view,
     getState: () => state,
     setState: (patch) => {
-      if (patch.color !== undefined) ui.setColorIdx(patch.color);
+      if (patch.brush !== undefined) ui.setBrush(patch.brush);
+      if (patch.tool !== undefined) ui.setTool(patch.tool);
+      if (patch.colorIdx !== undefined) ui.setColorIdx(patch.colorIdx);
       Object.assign(state, patch);
     },
   });
+  ui.setZoom(view.zoomPercent);
 
   ui.showGroup(groupForIndex(state.colorIdx));
   ui.setColorIdx(state.colorIdx);
@@ -273,6 +280,10 @@ function layout() {
   view.measure();
   view.fit();
   ui.setZoom(view.zoomPercent);
+  // The dock changes height with the board size and orientation; keep the
+  // toasts clear of it instead of guessing in CSS.
+  const dock = document.getElementById('dock');
+  if (dock) document.documentElement.style.setProperty('--dock-h', `${Math.round(dock.getBoundingClientRect().height)}px`);
 }
 
 let resizeTimer = null;
@@ -331,7 +342,7 @@ function exportPNG() {
   c.width = g.w * cell;
   c.height = g.h * cell;
   const ctx = c.getContext('2d');
-  ctx.fillStyle = '#f6efe2';
+  ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, c.width, c.height);
   const off = document.createElement('canvas');
   off.width = g.w;
@@ -382,7 +393,6 @@ function bindKeys() {
       if (k === 'b') return actions.setTool(TOOLS.BRUSH);
       if (k === 'e') return actions.setTool(TOOLS.ERASER);
       if (k === 'i') return actions.setTool(TOOLS.PICK);
-      if (k === 'h') return actions.setTool(TOOLS.PAN);
       if (k === 'g') {
         state.showGrid = !state.showGrid;
         document.getElementById('btnGrid').classList.toggle('active', state.showGrid);

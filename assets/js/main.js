@@ -7,7 +7,8 @@ import { Room } from './net/room.js';
 import { View } from './view.js';
 import { Cursors } from './cursors.js';
 import { Input, TOOLS } from './input.js';
-import { UI, cleanNick, validateNick } from './ui.js';
+import { StrokePacer } from './net/pacer.js';
+import { UI, cleanNick, validateNick, groupForIndex } from './ui.js';
 import { FLAT_COLORS, HEARTOPIA_GROUPS } from './data/heartopia-palette.js';
 import { BRUSH_SIZES, DEFAULTS, dimsFor } from './presets.js';
 import { makeRoomCode, normalizeRoomCode, detectDevice, clamp } from './util.js';
@@ -150,6 +151,10 @@ function mount(room) {
   });
   cursors = new Cursors({ room });
   view.onFrame((ctx, v) => cursors.draw(ctx, v));
+  // Other people's strokes replay on this schedule; ours land immediately.
+  const pacer = new StrokePacer(room);
+  room.pacer = pacer;
+  view.onTick(() => pacer.tick());
   // One hook covers wheel, pinch, buttons and fit, so the readout can never
   // disagree with the camera.
   view.onZoom = (percent) => ui.setZoom(percent);
@@ -173,16 +178,6 @@ function mount(room) {
   ui.setPlayers(room.roster, room.me.clientId);
   view.start();
   layout();
-}
-
-function groupForIndex(idx) {
-  let start = 1;
-  for (let i = 0; i < HEARTOPIA_GROUPS.length; i++) {
-    const len = HEARTOPIA_GROUPS[i].colors.length;
-    if (idx >= start && idx < start + len) return i;
-    start += len;
-  }
-  return 0;
 }
 
 /* ---------------- room wiring ---------------- */

@@ -30,6 +30,7 @@ export class View {
     this._image = null;
     this._baseDirty = true;
     this._fxDrawers = [];
+    this._tickers = [];
     this._raf = null;
     this.onResize = null;
     /** Called whenever the camera scale changes, from any source. */
@@ -223,10 +224,22 @@ export class View {
     this._fxDrawers.push(fn);
   }
 
+  /** Run before the board is composited, so work done here shows this frame. */
+  onTick(fn) {
+    this._tickers.push(fn);
+  }
+
   start() {
     if (this._raf) return;
     const loop = () => {
       this._raf = requestAnimationFrame(loop);
+      for (const fn of this._tickers) {
+        try {
+          fn();
+        } catch (e) {
+          console.error('tick failed', e);
+        }
+      }
       if (this._baseDirty) {
         this._baseDirty = false;
         this.drawBase();

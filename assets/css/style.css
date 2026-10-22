@@ -9,8 +9,9 @@
      neutral frame instead of a beige wash
    - the board stays the warm canvas paper it is in-game
 
-   The one deliberate flourish: pixel-notched corners. A painting board
-   in Heartopia is a rectangle of hard cells, so nothing here is rounded.
+   The chrome is built on hard, pixel-notched corners because a Heartopia board
+   is a rectangle of hard cells. The one place that stays soft is the shade
+   grid, whose rounding is copied from the game's own palette panel.
    ============================================================ */
 
 :root {
@@ -40,6 +41,13 @@
   --good: #40b678;        /* group 7 */
   --warn: #f77f54;        /* group 3 */
   --bad: #cf354d;         /* group 2 */
+
+  /* the game's palette body: brown wood with a hard darker offset */
+  --wood: #74584d;
+  --wood-dark: #574138;
+  --wood-hi: #997c7b;
+  --on-wood: #ffe4ba;
+  --on-wood-2: #eeddc0; /* 4.8:1 on the wood; #e2cbab only reached 4.1 */
 
   --notch: 5px;
   --bar-h: 54px;
@@ -409,13 +417,13 @@ kbd {
 
 .dock {
   grid-area: dock;
-  background: var(--ground-raised);
-  border-top: 2px solid var(--rule);
-  padding: 10px 12px;
+  background: var(--wood);
+  border-top: 3px solid var(--wood-dark);
+  padding: 12px 14px;
   display: grid;
   grid-template-columns: auto 1fr;
   grid-template-areas: "tools row" "tools groups" "tools swatches";
-  gap: 8px 12px;
+  gap: 10px 14px;
   align-content: center;
 }
 
@@ -425,32 +433,34 @@ kbd {
   align-items: center;
   gap: 7px;
   padding: 7px 10px;
-  border: 2px solid var(--rule-strong);
-  background: var(--ground);
+  border: 2px solid var(--wood-hi);
+  background: var(--wood-dark);
   cursor: pointer;
   font-size: 0.82rem;
   font-weight: 700;
   white-space: nowrap;
-  color: var(--on-ground);
-  transition: background 0.07s ease-out;
+  color: var(--on-wood);
+  box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.35);
+  transition: transform 0.07s ease-out, box-shadow 0.07s ease-out;
 }
+.tool:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35); }
 .tool.active { background: var(--accent); border-color: var(--accent-deep); color: var(--accent-ink); }
 .tool .ic { width: 18px; height: 18px; }
 
 .dock-row { grid-area: row; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-.dock-label { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--on-ground-2); }
+.dock-label { font-size: 0.75rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em; color: var(--on-wood-2); }
 
 .brushes { display: flex; gap: 6px; }
 .brush {
   width: 32px; height: 32px;
-  border: 2px solid var(--rule-strong);
-  background: var(--ground);
+  border: 2px solid var(--wood-hi);
+  background: var(--wood-dark);
   display: grid;
   place-items: center;
   cursor: pointer;
 }
-.brush span { background: var(--on-ground); display: block; }
-.brush.active { border-color: var(--accent); background: var(--accent); }
+.brush span { background: var(--on-wood); display: block; }
+.brush.active { background: var(--accent); border-color: #fff; box-shadow: inset 0 0 0 2px #fff; }
 .brush.active span { background: var(--accent-ink); }
 
 .current-color {
@@ -458,36 +468,41 @@ kbd {
   text-align: center;
   padding: 7px 9px;
   background: var(--c);
-  border: 2px solid rgba(0, 0, 0, 0.3);
+  border: 2px solid rgba(0, 0, 0, 0.35);
   font-family: var(--font-pixel);
   font-size: 0.75rem;
   font-weight: 400;
 }
 
-.groups { grid-area: groups; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
+/* Group chips are wide 2:1 blocks with a white ring on the active one, the
+   same shape the game's palette uses for its colour groups. */
+.groups { grid-area: groups; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 3px; }
 .groups::-webkit-scrollbar { display: none; }
 .group {
-  width: 26px; height: 26px;
+  width: 34px; height: 20px;
   flex: 0 0 auto;
-  border: 2px solid rgba(236, 228, 210, 0.25);
+  border: 2px solid rgba(255, 255, 255, 0.3);
   background: var(--c);
   cursor: pointer;
   padding: 0;
 }
-.group.active { outline: 2px solid var(--on-ground); outline-offset: 2px; }
+.group:hover { border-color: #fff; }
+.group.active { outline: 3px solid #fff; outline-offset: 2px; }
 
-.swatches { grid-area: swatches; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 2px; }
-.swatches::-webkit-scrollbar { display: none; }
+/* Shades sit in a grid of squares, not a scrolling strip. The slight corner
+   rounding here is copied from the game rather than invented. */
+.swatches { grid-area: swatches; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
 .swatch {
-  width: 30px; height: 30px;
-  flex: 0 0 auto;
-  border: 2px solid rgba(236, 228, 210, 0.2);
+  aspect-ratio: 1;
+  width: 100%;
+  border: 2px solid rgba(0, 0, 0, 0.25);
+  border-radius: 8px;
   background: var(--c);
   cursor: pointer;
   padding: 0;
 }
-.swatch:hover { border-color: var(--on-ground); }
-.swatch.active { outline: 3px solid var(--accent); outline-offset: 2px; }
+.swatch:hover { border-color: #fff; }
+.swatch.active { outline: 3px solid #fff; outline-offset: 1px; }
 
 /* ------------------------------- toasts ------------------------------- */
 
@@ -550,7 +565,7 @@ kbd {
   }
   .dock {
     border-top: 0;
-    border-left: 2px solid var(--rule);
+    border-left: 3px solid var(--wood-dark);
     grid-template-columns: 1fr;
     grid-template-areas: "row" "tools" "groups" "swatches";
     align-content: start;

@@ -7,8 +7,10 @@
 
 import { clamp } from './util.js';
 
-const PAPER = '#f6efe2';
-const PAPER_EDGE = '#d8c9ae';
+// The board is the game's blank canvas: white, not tinted. A painter has to be
+// able to trust what they see, and an empty Heartopia board reads as white.
+const PAPER = '#ffffff';
+const PAPER_EDGE = '#c9b997';
 const GRID_LINE = 'rgba(60,45,25,0.16)';
 const GRID_LINE_MAJOR = 'rgba(60,45,25,0.30)';
 
@@ -30,6 +32,8 @@ export class View {
     this._fxDrawers = [];
     this._raf = null;
     this.onResize = null;
+    /** Called whenever the camera scale changes, from any source. */
+    this.onZoom = null;
     this.rebuildStateCanvas();
   }
 
@@ -65,6 +69,11 @@ export class View {
     this.x = (this.cssW - this.grid.w * this.scale) / 2;
     this.y = (this.cssH - this.grid.h * this.scale) / 2;
     this._baseDirty = true;
+    this._emitZoom();
+  }
+
+  _emitZoom() {
+    if (this.onZoom) this.onZoom(this.zoomPercent);
   }
 
   /* ---------- state layer ---------- */
@@ -130,6 +139,7 @@ export class View {
     this.x = ax - cx * next;
     this.y = ay - cy * next;
     this._baseDirty = true;
+    this._emitZoom();
   }
 
   panBy(dx, dy) {

@@ -20,7 +20,7 @@
  * duvet never both do the same corner.
  */
 
-import { FLAT_COLORS, HEARTOPIA_GROUPS } from '../data/heartopia-palette.js';
+import { FLAT_COLORS, HEARTOPIA_GROUPS, COLOR_CODES } from '../data/heartopia-palette.js';
 import { bytesToB64, readableInk } from '../util.js';
 
 export const MODES = ['off', 'block', 'colour'];
@@ -167,7 +167,7 @@ export class Blueprint {
       if (c) counts.set(c, (counts.get(c) || 0) + 1);
     }
     return [...counts.entries()]
-      .map(([idx, n]) => ({ idx, hex: FLAT_COLORS[idx] || '#ffffff', n, group: groupOf(idx) }))
+      .map(([idx, n]) => ({ idx, hex: FLAT_COLORS[idx] || '#ffffff', n, group: groupOf(idx), code: COLOR_CODES[idx] || '' }))
       .sort((a, b) => b.n - a.n || a.idx - b.idx);
   }
 
@@ -244,7 +244,8 @@ export class Blueprint {
         ctx.lineWidth = 2.5;
         ctx.strokeRect(a.x - 1, a.y - 1, view.scale + 2, view.scale + 2);
         ctx.font = '700 11px ui-rounded, system-ui, sans-serif';
-        const text = `${this.pulse.x},${this.pulse.y} · ${FLAT_COLORS[this.pulse.color] || 'empty'}`;
+        const code = COLOR_CODES[this.pulse.color];
+        const text = `${this.pulse.x},${this.pulse.y} · ${code ? code + ' ' : ''}${FLAT_COLORS[this.pulse.color] || 'empty'}`;
         const w = ctx.measureText(text).width;
         ctx.fillStyle = 'rgba(36,26,16,0.88)';
         ctx.fillRect(a.x, a.y - 17, w + 10, 15);

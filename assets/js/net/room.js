@@ -26,6 +26,7 @@ import { RoomClock } from './clock.js';
 import CONFIG from '../config.js';
 import { indicesToB64, b64ToIndices, b64ToBytes } from '../util.js';
 import { itemIdForBoard, boardForItem, findItem } from '../game/slots.js';
+import { maskFor } from '../game/faces.js';
 import { DEFAULTS } from '../presets.js';
 import { createPeerTransport } from './transport-peer.js';
 import { createWSTransport } from './transport-ws.js';
@@ -227,11 +228,30 @@ export class Room extends Emitter {
 
   /** Apply to our own grid without broadcasting (local prediction). */
   paintLocal(indices, colorIdx, seq, faceIdx = this.design.active) {
-    const changed = this.design.paint(indices, colorIdx, seq, this.me.slot || 0, faceIdx);
+    const allowed = this._paintable(indices, faceIdx);
+    if (!allowed.length) return 0;
+    const changed = this.design.paint(allowed, colorIdx, seq, this.me.slot || 0, faceIdx);
     // Your own pen is never made to wait for a schedule.
-    if (this.display) this.display.reveal(faceIdx, indices);
+    if (this.display) this.display.reveal(faceIdx, allowed);
     if (changed) this.emit('grid', { local: true, changed, face: faceIdx });
     return changed;
+  }
+
+  /**
+   * Drop the cells the game itself refuses to paint. This is the only place the
+   * rule is applied, so a local stroke and a received op are filtered by the
+   * same code and the two cannot drift apart. Faces with no data (free canvas
+   * boards) pass through untouched.
+   */
+  _paintable(indices, faceIdx) {
+    if (!indices || !indices.length) return indices || [];
+    const face = this.design.item.faces[faceIdx];
+    if (!face) return indices;
+    const m = maskFor(this.design.id, face.id);
+    if (!m) return indices;
+    const keep = [];
+    for (const i of indices) if (m[i]) keep.push(i);
+    return keep;
   }
 
   /** Broadcast an op that has already been applied locally. */

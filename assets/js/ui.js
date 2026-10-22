@@ -15,7 +15,6 @@ const ICONS = {
     '<path d="M3 17c0 2 1.5 3.5 3.5 3.5 1 0 1.8-.4 2.3-1L16 12l-3-3L5.5 16c-.3.4-.5.8-.5 1z"/><path d="M14 7l3-3 4 4-3 3z"/>',
   eraser: '<path d="M8 20h10"/><path d="M6 16l6-6 6 6-4 4H8z"/>',
   pick: '<path d="M12 2l2 6-4 4-2-2z"/><path d="M8 12l-5 8 8-5"/>',
-  pan: '<path d="M12 3v8M8 6v6M16 6v6M4 12c0 5 3 8 8 8s8-3 8-8"/>',
   grid: '<rect x="4" y="4" width="16" height="16"/><path d="M10 4v16M16 4v16M4 10h16M4 16h16"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5h10"/>',
   save: '<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 20h16"/>',
@@ -202,11 +201,11 @@ export class UI {
       if (b) this.actions.setBrush(Number(b.dataset.brush));
     });
 
+    // No hand tool: pinch and space-drag do that job, like every other canvas.
     e.tools.innerHTML = [
       ['brush', 'Brush', 'B'],
       ['eraser', 'Eraser', 'E'],
       ['pick', 'Eyedropper', 'I'],
-      ['pan', 'Hand / zoom', 'H'],
     ]
       .map(
         ([id, label, key]) =>
@@ -216,6 +215,14 @@ export class UI {
     e.tools.addEventListener('click', (ev) => {
       const b = ev.target.closest('.tool');
       if (b) this.actions.setTool(b.dataset.tool);
+    });
+
+    // Delegation: showGroup() replaces the swatch nodes on every group change,
+    // so the listener has to live on the container.
+    e.swatches.addEventListener('click', (ev) => {
+      const b = ev.target.closest('.swatch');
+      if (!b) return;
+      this.actions.setColor(Number(b.dataset.idx));
     });
   }
 

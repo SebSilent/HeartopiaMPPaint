@@ -80,6 +80,11 @@ if (unmatched.length) {
 
 // The polygon and the cell list are two claims about the same shape. Check they
 // tell the same story, or one of them was mis-parsed.
+//
+// They do not agree everywhere, and the run above prints the worst case: the
+// shoe toe disagrees with itself on 16.79% of its cells. The cell list wins,
+// because that is the list the game blocks painting against, so maskFor uses
+// it and the polygon is only ever drawn.
 const inside = (rings, x, y) => {
   let c = false;
   for (const ring of rings) {

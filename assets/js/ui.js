@@ -8,7 +8,7 @@
  * `actions` object and calls it, the same way the dock always has.
  */
 
-import { HEARTOPIA_GROUPS, FLAT_COLORS } from './data/heartopia-palette.js';
+import { HEARTOPIA_GROUPS, FLAT_COLORS, COLOR_CODES } from './data/heartopia-palette.js';
 import { RATIOS, LEVELS, BRUSH_SIZES } from './presets.js';
 import { CATALOG, FAMILIES, FAMILY, findItem, cellTotal, itemIdForBoard, boardForItem } from './game/slots.js';
 import { clamp, escapeHtml, initials, makeRoomCode, normalizeRoomCode, readableInk, detectDevice } from './util.js';
@@ -441,7 +441,7 @@ export class UI {
     e.swatches.innerHTML = g.colors
       .map((hex, n) => {
         const idx = flat + n;
-        return `<button class="swatch" data-idx="${idx}" style="--c:${hex}" title="${hex}" aria-label="Colour ${idx}"></button>`;
+        return `<button class="swatch" data-idx="${idx}" style="--c:${hex}" title="${COLOR_CODES[idx] || ''} ${hex}" aria-label="Colour ${COLOR_CODES[idx] || idx}"></button>`;
       })
       .join('');
     // Only highlights what is showing. Which group is showing is the caller's
@@ -454,8 +454,9 @@ export class UI {
     const e = this.el;
     for (const s of e.swatches.children) s.classList.toggle('active', Number(s.dataset.idx) === this.state.colorIdx);
     const hex = FLAT_COLORS[this.state.colorIdx] || '#ffffff';
+    const code = COLOR_CODES[this.state.colorIdx];
     e.current.style.setProperty('--c', hex);
-    e.current.textContent = hex;
+    e.current.textContent = code ? `${code} ${hex}` : hex;
     e.current.style.color = readableInk(hex);
   }
 
@@ -618,8 +619,8 @@ export class UI {
         (l, n) =>
           `<button class="leg${this.state.colorIdx === l.idx ? ' active' : ''}" data-legend="${l.idx}" style="--c:${
             l.hex
-          };--ink:${readableInk(l.hex)}" title="${l.hex} · group ${l.group + 1}">
-            <i>${n + 1}</i><span>${l.n.toLocaleString()}</span></button>`
+          };--ink:${readableInk(l.hex)}" title="${l.code} · ${l.hex} · group ${l.group + 1}">
+            <i>${n + 1}</i><u>${l.code}</u><span>${l.n.toLocaleString()}</span></button>`
       )
       .join('');
   }

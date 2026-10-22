@@ -313,7 +313,7 @@ async function stagePaint(browser, errors) {
     const cs = getComputedStyle(s);
     // A pale yellow is not "saturated", so remember what was chosen and look
     // for that colour specifically rather than for any chroma at all.
-    const n = parseInt(s.title.slice(1), 16);
+    const n = parseInt((s.title.match(/#[0-9a-fA-F]{6}/) || ['#000000'])[0].slice(1), 16);
     return {
       active: s.classList.contains('active'),
       bg: cs.backgroundColor,

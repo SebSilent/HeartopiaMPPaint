@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { UI, groupForIndex } from '../assets/js/ui.js';
-import { HEARTOPIA_GROUPS } from '../assets/js/data/heartopia-palette.js';
+import { HEARTOPIA_GROUPS, COLOR_CODES } from '../assets/js/data/heartopia-palette.js';
 
 function makeEl(kind) {
   const node = {
@@ -107,9 +107,9 @@ test('the current-colour readout follows the shade, not the category', () => {
   const ui = makeDock();
   ui.setColorIdx(1);
   const hex = HEARTOPIA_GROUPS[0].colors[0];
-  assert.equal(ui.el.current.textContent, hex);
+  assert.equal(ui.el.current.textContent, `${COLOR_CODES[1]} ${hex}`);
   ui.showGroup(11);
-  assert.equal(ui.el.current.textContent, hex, 'still the same colour while browsing');
+  assert.equal(ui.el.current.textContent, `${COLOR_CODES[1]} ${hex}`, 'still the same colour while browsing');
 });
 
 test('every group renders all of its shades', () => {

@@ -571,6 +571,15 @@ kbd {
   text-align: center;
   color: var(--ink);
 }
+.leg u {
+  font-family: var(--font-pixel);
+  font-size: 0.62rem;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+  padding: 1px 4px;
+  background: rgba(255, 253, 247, 0.72);
+  color: #241a10;
+}
 .leg span { font-size: 0.78rem; font-weight: 800; color: var(--ink); }
 .leg:hover { border-color: var(--ink); }
 .leg.active { outline: 3px solid var(--ink); outline-offset: 1px; }

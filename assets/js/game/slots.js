@@ -15,109 +15,119 @@
  *
  * Face sizes are the game's numbers. Where the game does not publish a number
  * (the book's zone split), nothing is invented - it is an adjustable guide.
+ *
+ * `native` is the wording the game itself uses for that slot, so a player can
+ * match our picker against what Heartopia shows them.
  */
 
 import { RATIOS, LEVELS, GRID_DIMENSIONS } from '../presets.js';
 
-/** @typedef {{id:string,label:string,w:number,h:number,zone?:boolean}} Face */
+/** @typedef {{id:string,label:string,native?:string,w:number,h:number,zone?:boolean}} Face */
 
 /**
  * @param {string} id
  * @param {string} name
- * @param {Array<[string,string,number,number]>} faces  [face id, label, w, h]
+ * @param {string} native
+ * @param {Array<[string,string,string,number,number]>} faces  [face id, label, native, w, h]
  */
-function item(id, name, faces) {
-  return { id, name, family: '', faces: faces.map(([fid, label, w, h]) => ({ id: fid, label, w, h })) };
+function item(id, name, native, faces) {
+  return {
+    id,
+    name,
+    native,
+    family: '',
+    faces: faces.map(([fid, label, faceNative, w, h]) => ({ id: fid, label, native: faceNative, w, h })),
+  };
 }
 
 export const CLOTHING = [
-  item('tshirt', 'T-shirt', [
-    ['front', 'Front', 64, 80],
-    ['back', 'Back', 64, 80],
-    ['sleeveL', 'Left sleeve', 64, 48],
-    ['sleeveR', 'Right sleeve', 64, 48],
+  item('tshirt', 'T-shirt', 'Tシャツ', [
+    ['front', 'Front', 'フロント', 64, 80],
+    ['back', 'Back', 'バック', 64, 80],
+    ['sleeveL', 'Left sleeve', '左袖', 64, 48],
+    ['sleeveR', 'Right sleeve', '右袖', 64, 48],
   ]),
-  item('tank', 'Tank top', [
-    ['front', 'Front', 64, 64],
-    ['back', 'Back', 64, 64],
+  item('tank', 'Tank top', 'タンクトップ', [
+    ['front', 'Front', 'フロント', 64, 64],
+    ['back', 'Back', 'バック', 64, 64],
   ]),
-  item('sweat', 'Sweatshirt', [
-    ['front', 'Front', 80, 88],
-    ['back', 'Back', 80, 88],
-    ['sleeve', 'Sleeve', 130, 70],
+  item('sweat', 'Sweatshirt', 'スウェット', [
+    ['front', 'Front', 'フロント', 80, 88],
+    ['back', 'Back', 'バック', 80, 88],
+    ['sleeve', 'Sleeve', '袖', 130, 70],
   ]),
-  item('dress', 'Dress', [
-    ['front', 'Front', 102, 154],
-    ['back', 'Back', 76, 154],
-    ['inner', 'Inner', 168, 102],
+  item('dress', 'Dress', 'ワンピース', [
+    ['front', 'Front', 'フロント', 102, 154],
+    ['back', 'Back', 'バック', 76, 154],
+    ['inner', 'Inner', 'インナー', 168, 102],
   ]),
-  item('skirt', 'Mini skirt', [
-    ['front', 'Front', 128, 64],
-    ['back', 'Back', 128, 64],
+  item('skirt', 'Mini skirt', 'ミニスカート', [
+    ['front', 'Front', 'フロント', 128, 64],
+    ['back', 'Back', 'バック', 128, 64],
   ]),
-  item('shorts', 'Shorts', [
-    ['front', 'Front', 102, 64],
-    ['back', 'Back', 102, 64],
+  item('shorts', 'Shorts', 'ハーフパンツ', [
+    ['front', 'Front', 'フロント', 102, 64],
+    ['back', 'Back', 'バック', 102, 64],
   ]),
-  item('trousers', 'Trousers', [
-    ['front', 'Front', 80, 116],
-    ['back', 'Back', 80, 116],
+  item('trousers', 'Trousers', 'パンツ', [
+    ['front', 'Front', 'フロント', 80, 116],
+    ['back', 'Back', 'バック', 80, 116],
   ]),
-  item('bucket', 'Bucket hat', [
-    ['brimF', 'Front brim', 126, 78],
-    ['brimB', 'Rear brim', 126, 78],
-    ['crown', 'Crown', 100, 100],
+  item('bucket', 'Bucket hat', 'バケットハット', [
+    ['brimF', 'Front brim', '前つば', 126, 78],
+    ['brimB', 'Rear brim', '後ろつば', 126, 78],
+    ['crown', 'Crown', '帽子の上部', 100, 100],
   ]),
-  item('cap', 'Cap', [
-    ['front', 'Front', 54, 60],
-    ['rear', 'Back + sides', 128, 62],
-    ['brim', 'Brim', 62, 52],
+  item('cap', 'Cap', 'キャップ', [
+    ['front', 'Front', 'フロント', 54, 60],
+    ['rear', 'Back + sides', 'バック+サイド', 128, 62],
+    ['brim', 'Brim', '帽子のつば', 62, 52],
   ]),
-  item('shoes', 'Shoes', [
-    ['upper', 'Upper', 100, 90],
-    ['toe', 'Toe & laces', 120, 60],
-    ['sole', 'Sole', 60, 60],
+  item('shoes', 'Shoes', '靴', [
+    ['upper', 'Upper', 'アッパー', 100, 90],
+    ['toe', 'Toe & laces', '靴先・靴紐', 120, 60],
+    ['sole', 'Sole', 'ソール', 60, 60],
   ]),
-  item('maryjanes', 'Mary Janes', [
-    ['upper', 'Upper', 78, 64],
-    ['sole', 'Sole', 108, 64],
+  item('maryjanes', 'Mary Janes', 'メリージェーン', [
+    ['upper', 'Upper', 'アッパー', 78, 64],
+    ['sole', 'Sole', 'ソール', 108, 64],
   ]),
 ];
 
 export const FURNITURE = [
-  item('bed1', 'Single bed', [
-    ['duvet', 'Duvet top', 200, 130],
-    ['frame', 'Frame', 200, 98],
+  item('bed1', 'Single bed', 'シングルベッド', [
+    ['duvet', 'Duvet top', '布団の表', 200, 130],
+    ['frame', 'Frame', 'フレーム', 200, 98],
   ]),
-  item('bed2', 'Double bed', [
-    ['duvet', 'Duvet top', 256, 128],
-    ['frame', 'Bed frame', 256, 110],
+  item('bed2', 'Double bed', 'ダブルベッド', [
+    ['duvet', 'Duvet top', '布団の表', 256, 128],
+    ['frame', 'Bed frame', 'ベッドフレーム', 256, 110],
   ]),
-  item('sofa2', 'Two-seat sofa', [
-    ['back', 'Backrest', 200, 110],
-    ['seat', 'Seat', 200, 110],
+  item('sofa2', 'Two-seat sofa', 'ダブルソファ', [
+    ['back', 'Backrest', '背もたれ', 200, 110],
+    ['seat', 'Seat', '座面', 200, 110],
   ]),
-  item('sofa1', 'Armchair sofa', [
-    ['back', 'Backrest', 60, 60],
-    ['seat', 'Seat', 60, 70],
+  item('sofa1', 'Armchair sofa', 'シングルソファ', [
+    ['back', 'Backrest', '背もたれ', 60, 60],
+    ['seat', 'Seat', '座面', 60, 70],
   ]),
-  item('wardrobe', 'Wardrobe', [['door', 'Cabinet door', 128, 128]]),
-  item('nightstand', 'Nightstand', [['surface', 'Cabinet surface', 128, 128]]),
-  item('lowtable', 'Low table', [['top', 'Table top', 128, 128]]),
-  item('chair', 'Chair', [
-    ['backF', 'Backrest, front', 54, 28],
-    ['backR', 'Backrest, rear', 54, 28],
-    ['seat', 'Seat', 54, 54],
+  item('wardrobe', 'Wardrobe', 'クローゼット', [['door', 'Cabinet door', 'キャビネットドア', 128, 128]]),
+  item('nightstand', 'Nightstand', 'ナイトテーブル', [['surface', 'Cabinet surface', 'キャビネット表面', 128, 128]]),
+  item('lowtable', 'Low table', 'ローテーブル', [['top', 'Table top', 'テーブルの台面', 128, 128]]),
+  item('chair', 'Chair', 'チェア', [
+    ['backF', 'Backrest, front', '背もたれ・前', 54, 28],
+    ['backR', 'Backrest, rear', '背もたれ・後ろ', 54, 28],
+    ['seat', 'Seat', '座面', 54, 54],
   ]),
-  item('tablelamp', 'Table lamp', [
-    ['shadeF', 'Shade front', 80, 46],
-    ['shadeR', 'Shade rear', 80, 46],
-    ['rim', 'Base rim', 128, 28],
+  item('tablelamp', 'Table lamp', 'テーブルランプ', [
+    ['shadeF', 'Shade front', 'ランプシェード前', 80, 46],
+    ['shadeR', 'Shade rear', 'ランプシェード後', 80, 46],
+    ['rim', 'Base rim', '土台の縁', 128, 28],
   ]),
-  item('floorlamp', 'Floor lamp', [
-    ['shadeF', 'Shade front', 80, 52],
-    ['shadeR', 'Shade rear', 80, 52],
-    ['rim', 'Base rim', 128, 16],
+  item('floorlamp', 'Floor lamp', 'フロアランプ', [
+    ['shadeF', 'Shade front', 'ランプシェード前', 80, 52],
+    ['shadeR', 'Shade rear', 'ランプシェード後', 80, 52],
+    ['rim', 'Base rim', '土台の縁', 128, 16],
   ]),
 ];
 
@@ -129,9 +139,10 @@ export const FURNITURE = [
 export const BOOK = {
   id: 'book',
   name: 'Book',
+  native: '本',
   faces: [
-    { id: 'wide', label: 'Face 4:3', w: 150, h: 114, zone: true },
-    { id: 'tall', label: 'Face 16:9', w: 150, h: 84, zone: true },
+    { id: 'wide', label: 'Face 4:3', native: '(4:3)', w: 150, h: 114, zone: true },
+    { id: 'tall', label: 'Face 16:9', native: '(16:9)', w: 150, h: 84, zone: true },
   ],
   zones: ['Front cover', 'Spine', 'Back cover'],
 };

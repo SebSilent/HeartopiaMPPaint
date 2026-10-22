@@ -29,6 +29,11 @@ export const COLOR_CODES = [null, ...HEARTOPIA_GROUPS.flatMap((g, gi) => g.color
 // The game's 16 base colours. 02, 03 and 04 have no detail row of their own.
 export const GAME_BASE = [{"code":"01","hex":"#051616"},{"code":"02","hex":"#FEFFFF"},{"code":"03","hex":"#808282"},{"code":"04","hex":"#E5E5E0"},{"code":"05","hex":"#EF6E72"},{"code":"06","hex":"#F98358"},{"code":"07","hex":"#FEAE3B"},{"code":"08","hex":"#F9D837"},{"code":"09","hex":"#B7C931"},{"code":"10","hex":"#41B97B"},{"code":"11","hex":"#05ABA0"},{"code":"12","hex":"#0599BA"},{"code":"13","hex":"#2B83C1"},{"code":"14","hex":"#7577BC"},{"code":"15","hex":"#A167A9"},{"code":"16","hex":"#D0698F"}];
 
+// The base colour behind each of our 13 groups, and its code in the game. Note
+// this is not the group's first shade: the rows run dark to light, so the base
+// sits at -2 everywhere except row 01, where the darkest shade is the base.
+export const GROUP_BASE = [{"key":"01","code":"01-1","hex":"#051616"},{"key":"05","code":"05-2","hex":"#EF6E72"},{"key":"06","code":"06-2","hex":"#F98358"},{"key":"07","code":"07-2","hex":"#FEAE3B"},{"key":"08","code":"08-2","hex":"#F9D837"},{"key":"09","code":"09-2","hex":"#B7C931"},{"key":"10","code":"10-2","hex":"#41B97B"},{"key":"11","code":"11-2","hex":"#05ABA0"},{"key":"12","code":"12-2","hex":"#0599BA"},{"key":"13","code":"13-2","hex":"#2B83C1"},{"key":"14","code":"14-2","hex":"#7577BC"},{"key":"15","code":"15-2","hex":"#A167A9"},{"key":"16","code":"16-2","hex":"#D0698F"}];
+
 export function codeFor(index) {
   return COLOR_CODES[index] || null;
 }

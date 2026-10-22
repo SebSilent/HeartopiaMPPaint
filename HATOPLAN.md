@@ -12,6 +12,10 @@ Ordered. Each phase should be shippable on its own.
 
 Before adding anything, close the gaps people hit in the first minute.
 
+- [x] **Smooth remote strokes.** Done in `net/pacer.js`: remote bursts replay on room time
+  (~90 ms behind, painted in over ~55 ms) while local input stays instant. Tunables are in
+  `CONFIG.smooth`, exposed as `?smoothDelay=` / `?smoothSpread=` for testing. If it still stutters on
+  a bad link, raise `delayMs` before touching anything else.
 - [ ] **Undo / redo.** One command per stroke, so it is just a stack of `{cells, from, to}` patches.
   This is the single most missing thing, and it is the reason the rest is safe to try.
 - [ ] **Reconnect without a flash.** Keep the board on screen while the transport re-hands, instead of

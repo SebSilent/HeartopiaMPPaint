@@ -470,15 +470,22 @@ async function stagePanels(browser, errors) {
   });
   ok('a garment shows one tab per face', !tabs.hidden && tabs.n >= 2, JSON.stringify(tabs));
 
-  const natives = await page.evaluate(() => {
+  const chrome = await page.evaluate(() => {
     const card = document.querySelector('#fItems .item-card');
     const tab = document.querySelector('#faces .face');
-    return { card: card ? card.textContent : '', tabTitle: tab ? tab.getAttribute('title') : '' };
+    return {
+      card: card ? card.textContent.replace(/\s+/g, ' ').trim() : '',
+      tabTitle: tab ? tab.getAttribute('title') : '',
+      tabText: tab ? tab.textContent.replace(/\s+/g, ' ').trim() : '',
+    };
   });
+  // The picker is a picker. It carries names and sizes and nothing else.
   ok(
-    'the picker shows the game\'s own slot name',
-    /Tシャツ/.test(natives.card) && /フロント/.test(natives.tabTitle),
-    JSON.stringify(natives)
+    'the picker carries no descriptive text',
+    !/[぀-ヿ]/.test(chrome.card + chrome.tabTitle + chrome.tabText) &&
+      !/\.{3}|·/.test(chrome.tabText) &&
+      chrome.card === 'T-shirt' && /^Front/.test(chrome.tabText),
+    JSON.stringify(chrome)
   );
 
   await page.evaluate(() => document.querySelectorAll('#faces .face')[1].click());

@@ -18,6 +18,8 @@ REPORT.md
 # browser-check output and scratch (tools/check*.cjs write captures here)
 /_shots/
 /tools/_scratch.cjs
+/_*.txt
+/_old_re/
 
 # logs / os noise
 *.log

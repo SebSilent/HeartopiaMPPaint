@@ -74,10 +74,11 @@ export class Preview3D {
    * @param {HTMLCanvasElement} canvas
    * @param {(faceId:string)=>HTMLCanvasElement|null} texture  face id -> its pixels
    */
-  constructor(canvas, texture) {
+  constructor(canvas, texture, outline) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
     this.texture = texture;
+    this.outline = outline;
     this.yaw = -24;
     this.pitch = 14;
     this.zoom = 1;
@@ -112,6 +113,11 @@ export class Preview3D {
       // affine approximation stays under half a pixel of error.
       const n = Math.max(3, Math.min(8, Math.round(Math.max(fw, fh) / 10)));
       const lit = 0.62 + 0.38 * Math.abs(dot3(normal, LIGHT));
+      // The silhouette rides along as a polygon in model space and is clipped
+      // once per panel at draw time. Cutting the quad grid to one quad per cell
+      // would need 15,000+ triangles on a dress, and every triangle repaints the
+      // whole face texture, which is more than this preview is worth.
+      const loop = this._loopFor(item.id, face, p, corners);
       for (let iy = 0; iy < n; iy++) {
         for (let ix = 0; ix < n; ix++) {
           const u0 = ix / n;
@@ -119,9 +125,9 @@ export class Preview3D {
           const v0 = iy / n;
           const v1 = (iy + 1) / n;
           tri(tris, bilerp(corners, u0, v0), bilerp(corners, u1, v0), bilerp(corners, u1, v1),
-            [u0 * face.w, v0 * face.h], [u1 * face.w, v0 * face.h], [u1 * face.w, v1 * face.h], tex, lit);
+            [u0 * face.w, v0 * face.h], [u1 * face.w, v0 * face.h], [u1 * face.w, v1 * face.h], tex, lit, loop, face.id);
           tri(tris, bilerp(corners, u0, v0), bilerp(corners, u1, v1), bilerp(corners, u0, v1),
-            [u0 * face.w, v0 * face.h], [u1 * face.w, v1 * face.h], [u0 * face.w, v1 * face.h], tex, lit);
+            [u0 * face.w, v0 * face.h], [u1 * face.w, v1 * face.h], [u0 * face.w, v1 * face.h], tex, lit, loop, face.id);
         }
       }
       for (const v of corners) radius = Math.max(radius, Math.hypot(v[0], v[1], v[2]));
@@ -129,6 +135,21 @@ export class Preview3D {
     this.radius = radius;
     this._tris = tris;
     return tris.length;
+  }
+
+  /** The face silhouette, mapped into the panel's model-space plane. */
+  _loopFor(itemId, face, p, corners) {
+    if (!this.outline) return null;
+    const o = this.outline(itemId, face.id);
+    // outlineFor() hands back { w, h, ring } in cell coordinates.
+    if (!o || !Array.isArray(o.ring) || o.ring.length < 3) return null;
+    const ux = [(corners[1][0] - corners[0][0]) / face.w, (corners[1][1] - corners[0][1]) / face.w, (corners[1][2] - corners[0][2]) / face.w];
+    const uy = [(corners[3][0] - corners[0][0]) / face.h, (corners[3][1] - corners[0][1]) / face.h, (corners[3][2] - corners[0][2]) / face.h];
+    return o.ring.map((pt) => [
+      corners[0][0] + pt[0] * ux[0] + pt[1] * uy[0],
+      corners[0][1] + pt[0] * ux[1] + pt[1] * uy[1],
+      corners[0][2] + pt[0] * ux[2] + pt[1] * uy[2],
+    ]);
   }
 
   _texFor(face) {
@@ -170,7 +191,33 @@ export class Preview3D {
     // Painter: smallest rz first is furthest from the camera.
     view.sort((a, b) => a.z - b.z);
     ctx.imageSmoothingEnabled = false;
-    for (const v of view) drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.t.lit);
+    // A panel is flat but rotated, so its triangles sit at different depths and
+    // interleave with other panels in the sort. The silhouette therefore has to
+    // be clipped per triangle, not per panel. Each ring is projected once per
+    // frame and reused.
+    const clips = new Map();
+    for (const v of view) {
+      const loop = v.t.loop;
+      if (!loop) {
+        drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.t.lit);
+        continue;
+      }
+      let pts = clips.get(loop);
+      if (!pts) {
+        pts = loop.map((p) => this._project(p, dist, focal, w, h));
+        if (pts.some((p) => !p)) pts = null;
+        clips.set(loop, pts);
+      }
+      if (!pts) continue;
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.closePath();
+      ctx.clip();
+      drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.t.lit);
+      ctx.restore();
+    }
   }
 
   _project(p, dist, focal, w, h) {
@@ -197,8 +244,8 @@ export class Preview3D {
   }
 }
 
-function tri(tris, a, b, c, u, v, w2, tex, lit) {
-  tris.push({ a, b, c, u, v, w2, tex, lit, a2: a[2], b2: b[2], c2: c[2] });
+function tri(tris, a, b, c, u, v, w2, tex, lit, loop, faceId) {
+  tris.push({ a, b, c, u, v, w2, tex, lit, loop: loop || null, face: faceId, a2: a[2], b2: b[2], c2: c[2] });
 }
 
 /* ---------------- triangle rasteriser ---------------- */

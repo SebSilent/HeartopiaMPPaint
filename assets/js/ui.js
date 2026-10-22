@@ -83,6 +83,7 @@ export class UI {
     this.state = state;
     this.onJoin = onJoin;
     this.actions = actions;
+    this._outline = { has: false, inside: 0, total: 0, itemName: '' };
     this.el = {
       veil: document.getElementById('veil'),
       card: document.getElementById('joinCard'),
@@ -121,6 +122,8 @@ export class UI {
       traceModes: document.getElementById('traceModes'),
       blockSizes: document.getElementById('blockSizes'),
       traceNote: document.getElementById('traceNote'),
+      outlineBtn: document.getElementById('outlineBtn'),
+      outlineNote: document.getElementById('outlineNote'),
       legend: document.getElementById('legend'),
       importPanel: document.getElementById('importPanel'),
       importModes: document.getElementById('importModes'),
@@ -161,7 +164,7 @@ export class UI {
     this._syncPick(e.myColors, e.myColors.querySelector(`[data-color="${this.state.color}"]`));
 
     e.famRow.innerHTML = FAMILIES.map(
-      (f) => `<button class="pick-fam" data-fam="${f}" title="${FAMILY[f].blurb}">${FAMILY[f].name}</button>`
+      (f) => `<button class="pick-fam" data-fam="${f}">${FAMILY[f].name}</button>`
     ).join('');
     e.famRow.addEventListener('click', (ev) => {
       const b = ev.target.closest('[data-fam]');
@@ -178,7 +181,7 @@ export class UI {
       (r) => `<button class="pick-ratio" data-ratio="${r}" title="${r}">${r}</button>`
     ).join('');
     e.levels.innerHTML = LEVELS.map(
-      (l) => `<button class="pick-level" data-level="${l.id}" title="${l.name} (${l.hint})">${l.tag}</button>`
+      (l) => `<button class="pick-level" data-level="${l.id}" title="${l.name}">${l.tag}</button>`
     ).join('');
 
     const pickBoard = (btn) => {
@@ -233,11 +236,7 @@ export class UI {
     e.itemPick.innerHTML = CATALOG[fam]
       .map(
         (i) =>
-          `<button class="item-chip" data-item="${i.id}" title="${i.native ? escapeHtml(i.native) + ' · ' : ''}${
-            i.faces.length
-          } faces · ${cellTotal(i).toLocaleString()} cells">${escapeHtml(
-            i.name
-          )}<b>${i.faces.length}</b></button>`
+          `<button class="item-chip" data-item="${i.id}">${escapeHtml(i.name)}<b>${i.faces.length}</b></button>`
       )
       .join('');
     e.itemPick.onclick = (ev) => {
@@ -285,10 +284,7 @@ export class UI {
     } else {
       e.dims.textContent = `${item.faces.length} faces · ${cellTotal(item).toLocaleString()} cells`;
     }
-    e.boardNote.textContent =
-      this.state.roomLocked
-        ? 'The room already decided what it is making.'
-        : 'First player in the room sets it. Everyone else matches.';
+    e.boardNote.textContent = this.state.roomLocked ? 'Set by the room.' : '';
     e.ratios.classList.toggle('locked', !!this.state.roomLocked);
     e.levels.classList.toggle('locked', !!this.state.roomLocked);
   }
@@ -488,6 +484,7 @@ export class UI {
   /* ---------------- face tabs ---------------- */
 
   setFaces(faces, active, elsewhere = []) {
+    this._paintOutline();
     const e = this.el;
     if (faces.length < 2) {
       e.faces.innerHTML = '';
@@ -505,9 +502,7 @@ export class UI {
           .map((p) => `<i class="who" style="--c:${escapeHtml(p.color)}" title="${escapeHtml(p.nick)}"></i>`)
           .join('');
         const more = who.length > 4 ? `<i class="who more">+${who.length - 4}</i>` : '';
-        return `<button class="face ${i === active ? 'active' : ''}" data-face="${i}" title="${f.native ? escapeHtml(f.native) + ' · ' : ''}${
-          f.w
-        } × ${f.h} cells">
+        return `<button class="face ${i === active ? 'active' : ''}" data-face="${i}" title="${f.w} × ${f.h}">
           ${escapeHtml(f.label)}<b>${f.w}×${f.h}</b>${dots ? `<span class="who-row">${dots}${more}</span>` : ''}</button>`;
       })
       .join('');
@@ -536,6 +531,7 @@ export class UI {
     document.getElementById('btnHelp').addEventListener('click', () => this.toggleHelp());
     e.undo.innerHTML = svg('undo');
     e.redo.innerHTML = svg('redo');
+    e.outlineBtn.addEventListener('click', () => this.actions.setOutline(!this.state.showOutline));
     e.undo.addEventListener('click', () => this.actions.undo());
     e.redo.addEventListener('click', () => this.actions.redo());
     e.faces.addEventListener('click', (ev) => {
@@ -598,6 +594,23 @@ export class UI {
       const b = ev.target.closest('[data-legend]');
       if (b) this.actions.setColor(Number(b.dataset.legend));
     });
+  }
+
+  setOutlineInfo(has, inside, total, itemName) {
+    this._outline = { has, inside, total, itemName };
+    this._paintOutline();
+  }
+
+  // The dock re-renders on every face change, so the outline row redraws there
+  // too; without this the toggle would vanish the moment you switched face.
+  _paintOutline() {
+    const e = this.el;
+    if (!e.outlineBtn) return;
+    const { has, inside, total, itemName } = this._outline;
+    e.outlineBtn.classList.toggle('active', this.state.showOutline && has);
+    e.outlineBtn.disabled = !has;
+    e.outlineBtn.setAttribute('aria-pressed', String(!!(this.state.showOutline && has)));
+    e.outlineNote.textContent = has ? `${inside.toLocaleString()} of ${total.toLocaleString()} cells on ${itemName}` : '';
   }
 
   syncTrace(mode, block) {
@@ -760,19 +773,11 @@ export class UI {
       items.innerHTML = CATALOG[state.family]
         .map(
           (i) =>
-            `<button class="item-card" data-item="${i.id}"><b>${escapeHtml(i.name)}</b><span>${
-              i.native ? escapeHtml(i.native) + ' · ' : ''
-            }${i.faces
-              .map((f) => `${f.w}×${f.h}`)
-              .join(' · ')}</span></button>`
+            `<button class="item-card" data-item="${i.id}"><b>${escapeHtml(i.name)}</b></button>`
         )
         .join('');
       for (const b of items.children) b.classList.toggle('active', b.dataset.item === state.item);
-      if (item) {
-        info.textContent = `${item.name} · ${item.faces.length} ${item.faces.length === 1 ? 'face' : 'faces'} · ${cellTotal(
-          item
-        ).toLocaleString()} cells to fill`;
-      }
+      if (item) info.textContent = `${item.faces.length} ${item.faces.length === 1 ? 'face' : 'faces'}`;
     };
     fams.innerHTML = FAMILIES.map((f) => `<button data-fam="${f}">${FAMILY[f].name}</button>`).join('');
     fams.onclick = (ev) => {

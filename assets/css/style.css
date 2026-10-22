@@ -940,7 +940,7 @@ input[type="range"].slider::-moz-range-thumb {
 
 @media (min-width: 880px) and (orientation: landscape) {
   .app {
-    grid-template-columns: 1fr 272px;
+    grid-template-columns: minmax(0, 1fr) clamp(320px, 28vw, 560px);
     grid-template-rows: var(--bar-h) auto minmax(0, 1fr);
     grid-template-areas: "bar bar" "faces faces" "stage dock";
   }
@@ -949,6 +949,10 @@ input[type="range"].slider::-moz-range-thumb {
     border-left: 3px solid var(--wood-dark);
     align-content: start;
     overflow-y: auto;
+    /* The 46vh cap exists to stop a bottom dock squeezing the board. As a
+       sidebar it has its own full-height column, so the cap only ever made the
+       tools shorter than the window they sit in. */
+    max-height: none;
   }
   .tools { flex-direction: row; flex-wrap: wrap; }
   .toasts { bottom: 24px; }

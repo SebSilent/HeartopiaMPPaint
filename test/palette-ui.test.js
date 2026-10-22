@@ -34,7 +34,9 @@ function makeEl(kind) {
     set(v) {
       html = v;
       // Enough parsing to see what the dock actually renders.
-      node.children = [...String(v).matchAll(/data-(group|idx)="(\d+)"/g)].map((m) => {
+      // Only the buttons themselves declare a data- attribute; the title text
+      // around them mentions the same numbers and must not be parsed as one.
+      node.children = [...String(v).matchAll(/<button[^>]*data-(group|idx)="(\d+)"/g)].map((m) => {
         const child = makeEl(m[1]);
         child.dataset[m[1]] = m[2];
         return child;

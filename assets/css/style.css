@@ -419,12 +419,16 @@ kbd {
   grid-area: dock;
   background: var(--wood);
   border-top: 3px solid var(--wood-dark);
-  padding: 12px 14px;
+  /* The palette is the tall thing now, so the dock scrolls instead of pushing
+     the board off screen. --dock-h is re-measured from this element in JS. */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 12px 14px calc(12px + var(--safe-b));
   display: grid;
-  grid-template-columns: auto 1fr;
-  grid-template-areas: "tools row" "tools groups" "tools swatches";
-  gap: 10px 14px;
-  align-content: center;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "row" "tools" "palette";
+  gap: 10px;
+  align-content: start;
 }
 
 .tools { grid-area: tools; display: flex; flex-direction: column; gap: 6px; }
@@ -474,13 +478,37 @@ kbd {
   font-weight: 400;
 }
 
+/* The palette is the one thing in the dock that should read as an object: a
+   panel lifted straight off the game's brown colour card, with a name on it. */
+.palette {
+  grid-area: palette;
+  background: var(--wood);
+  border: 3px solid var(--wood-dark);
+  padding: 10px 12px 12px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.palette-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.palette-head h2 {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--on-wood);
+}
+.palette-note {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--on-wood-2);
+}
+
 /* Group chips are wide 2:1 blocks with a white ring on the active one, the
    same shape the game's palette uses for its colour groups. */
-.groups { grid-area: groups; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding-bottom: 3px; }
-.groups::-webkit-scrollbar { display: none; }
+.groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(26px, 44px)); gap: 5px; }
 .group {
-  width: 34px; height: 20px;
-  flex: 0 0 auto;
+  height: 20px;
+  min-width: 0;
   border: 2px solid rgba(255, 255, 255, 0.3);
   background: var(--c);
   cursor: pointer;
@@ -489,12 +517,15 @@ kbd {
 .group:hover { border-color: #fff; }
 .group.active { outline: 3px solid #fff; outline-offset: 2px; }
 
-/* Shades sit in a grid of squares, not a scrolling strip. The slight corner
-   rounding here is copied from the game rather than invented. */
-.swatches { grid-area: swatches; display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+/* Shades are squares, not stretched tiles. auto-fit + aspect-ratio does it at
+   any width, so nothing is ever cut off - the old fixed 5-column grid was. */
+.swatches { display: grid; grid-template-columns: repeat(auto-fit, minmax(30px, 46px)); gap: 6px; }
 .swatch {
   aspect-ratio: 1;
   width: 100%;
+  min-width: 0;
+  align-self: start; /* a grid item stretches by default, which makes rectangles */
+  justify-self: start;
   border: 2px solid rgba(0, 0, 0, 0.25);
   border-radius: 8px;
   background: var(--c);
@@ -566,14 +597,10 @@ kbd {
   .dock {
     border-top: 0;
     border-left: 3px solid var(--wood-dark);
-    grid-template-columns: 1fr;
-    grid-template-areas: "row" "tools" "groups" "swatches";
     align-content: start;
     overflow-y: auto;
-    padding-bottom: calc(14px + var(--safe-b));
   }
   .tools { flex-direction: row; flex-wrap: wrap; }
-  .swatches { flex-wrap: wrap; overflow: visible; }
   .toasts { bottom: 24px; }
 }
 
@@ -585,11 +612,29 @@ kbd {
   .current-color { min-width: 72px; }
 }
 
-/* landscape phones: give the board the height, shrink the dock */
+/* landscape phones: give the board the height, shrink the dock. Only sizes
+   change here - the squares stay squares because aspect-ratio drives them. */
 @media (max-height: 460px) and (orientation: landscape) {
-  .swatch, .group { width: 24px; height: 24px; }
-  .dock { padding: 6px 10px; gap: 6px 10px; }
+  /* Short screens: the board needs the height, so the dock goes side by side
+     instead of stacking into a 280 px sheet that leaves 50 px of canvas. */
+  .dock {
+    grid-template-columns: minmax(0, 208px) minmax(0, 1fr);
+    grid-template-areas:
+      "row palette"
+      "tools palette";
+    align-content: center;
+    padding: 6px 10px;
+    gap: 6px 10px;
+  }
+  .dock-row { flex-direction: column; align-items: flex-start; gap: 5px; }
+  .tools { flex-direction: row; flex-wrap: wrap; }
+  .swatches { grid-template-columns: repeat(auto-fit, minmax(24px, 30px)); gap: 4px; }
+  .groups { grid-template-columns: repeat(auto-fit, minmax(20px, 28px)); gap: 4px; }
+  .group { height: 14px; }
+  .palette-head { gap: 6px; }
+  .palette { padding: 8px 9px 9px; gap: 7px; }
   .tool span { display: none; }
+  .current-color { min-width: 0; padding: 5px 8px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

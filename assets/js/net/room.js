@@ -14,13 +14,19 @@
  *   2. a new joiner gets one snapshot and starts from there;
  *   3. the authority publishes version+checksum every few seconds; anyone who
  *      disagrees asks for a fresh snapshot. A lost packet self-heals.
+ *
+ * What a room holds is a Design: the item everyone is working on, and one grid
+ * per face of it. Every op, snapshot and checksum carries a face index, so a
+ * guest painting a sleeve and you painting the front are the same mechanism
+ * twice, not a special case.
  */
 
-import { Grid } from '../game/grid.js';
+import { Design } from '../game/design.js';
 import { RoomClock } from './clock.js';
 import CONFIG from '../config.js';
-import { indicesToB64, b64ToIndices } from '../util.js';
-import { dimsFor, isValidRatio, clampLevel, DEFAULTS } from '../presets.js';
+import { indicesToB64, b64ToIndices, b64ToBytes } from '../util.js';
+import { itemIdForBoard, boardForItem, findItem } from '../game/slots.js';
+import { DEFAULTS } from '../presets.js';
 import { createPeerTransport } from './transport-peer.js';
 import { createWSTransport } from './transport-ws.js';
 
@@ -49,21 +55,26 @@ class Emitter {
 }
 
 export class Room extends Emitter {
-  constructor({ code, me, ratio = DEFAULTS.ratio, level = DEFAULTS.level, transportFactory = null }) {
+  constructor({
+    code,
+    me,
+    item = null,
+    ratio = DEFAULTS.ratio,
+    level = DEFAULTS.level,
+    transportFactory = null,
+  }) {
     super();
     this.code = code;
     this.me = { clientId: me.clientId, nick: me.nick, color: me.color, device: me.device, slot: null };
     this.clock = new RoomClock();
-    this.room = { ratio: isValidRatio(ratio) ? ratio : '1:1', level: clampLevel(level) };
-    const d = dimsFor(this.room.ratio, this.room.level);
-    this.grid = new Grid(d.w, d.h);
+    this.design = new Design(item || itemIdForBoard(ratio, level));
+    // The display copy is a browser concern; the relay never makes one.
+    this.display = null;
     this.lamport = 0;
     this.status = 'idle';
     this.detail = '';
     this.authority = false;
     this.transport = null;
-    // Set by the browser only: a lagging copy of the grid, for smooth strokes.
-    this.display = null;
     // Transport connection id -> clientId. Only a message carrying a real
     // clientId tells us who is on the other end of a link.
     this._connOwners = new Map();
@@ -73,6 +84,31 @@ export class Room extends Emitter {
     this._slotCounter = 1;
     this._timers = [];
     this._lastHdr = 0;
+  }
+
+  /* ------------------------- the board, as read by the view ------------------------- */
+
+  /** The face you are looking at. Everything single-board used to work with. */
+  get grid() {
+    return this.design.grid;
+  }
+
+  get faces() {
+    return this.design.faces;
+  }
+
+  get face() {
+    return this.design.face;
+  }
+
+  /** Kept so old links (?room=CODE&ratio=4:3) and the relay's header still work. */
+  get room() {
+    return { ...this.design.board, item: this.design.id };
+  }
+
+  set room(v) {
+    if (v && v.item) this.design.setItem(v.item);
+    else if (v && v.ratio) this.design.setItem(itemIdForBoard(v.ratio, v.level));
   }
 
   /* ------------------------- connection ------------------------- */
@@ -133,10 +169,10 @@ export class Room extends Emitter {
       // roster we already have and take over numbering from it.
       // Stop animating and match the truth exactly, before publishing a
       // checksum for it.
-      if (this.display) this.display.sync();
+      if (this.display) this.display.drop();
       this._initAuthoritySlots();
       this._broadcastRoster();
-      this._send({ k: 'state-hdr', version: this.grid.version, checksum: this.grid.checksum(), seq: this.lamport });
+      this._send({ k: 'state-hdr', version: this.design.version, checksum: this.design.checksum(), seq: this.lamport });
     } else {
       this._send({ k: 'hello', nick: this.me.nick, color: this.me.color, device: this.me.device });
       this._send({ k: 'sync-req' });
@@ -168,9 +204,11 @@ export class Room extends Emitter {
       role: this.authority ? 'host' : 'guest',
       players: this._roster.size,
       latency: this.clock.latencyMs,
-      version: this.grid.version,
-      checksum: this.grid.checksum(),
-      cells: `${this.grid.w}x${this.grid.h}`,
+      version: this.design.version,
+      checksum: this.design.checksum(),
+      cells: `${this.design.w}x${this.design.h}`,
+      faces: this.design.faces.length,
+      item: this.design.id,
     };
   }
 
@@ -188,49 +226,109 @@ export class Room extends Emitter {
   }
 
   /** Apply to our own grid without broadcasting (local prediction). */
-  paintLocal(indices, colorIdx, seq) {
-    const changed = this.grid.paint(indices, colorIdx, seq, this.me.slot || 0);
+  paintLocal(indices, colorIdx, seq, faceIdx = this.design.active) {
+    const changed = this.design.paint(indices, colorIdx, seq, this.me.slot || 0, faceIdx);
     // Your own pen is never made to wait for a schedule.
-    if (this.display) this.display.reveal(indices);
-    if (changed) this.emit('grid', { local: true, changed });
+    if (this.display) this.display.reveal(faceIdx, indices);
+    if (changed) this.emit('grid', { local: true, changed, face: faceIdx });
     return changed;
   }
 
   /** Broadcast an op that has already been applied locally. */
-  sendOp(indices, colorIdx, seq) {
+  sendOp(indices, colorIdx, seq, faceIdx = this.design.active) {
     if (!indices || !indices.length) return 0;
     // Room time at send, so the receiver can replay our rhythm instead of our
     // packet timing. See net/display.js.
-    return this._send({ k: 'op', c: colorIdx, seq, rt: this.clock.now(), cells: indicesToB64(indices) });
+    return this._send({
+      k: 'op',
+      f: faceIdx,
+      c: colorIdx,
+      seq,
+      rt: this.clock.now(),
+      cells: indicesToB64(indices),
+    });
   }
 
   /** Paint a run of cells and tell the room, in one step. */
-  paint(indices, colorIdx) {
+  paint(indices, colorIdx, faceIdx = this.design.active) {
     const seq = this.nextSeq();
-    const changed = this.paintLocal(indices, colorIdx, seq);
-    this.sendOp(indices, colorIdx, seq);
+    const changed = this.paintLocal(indices, colorIdx, seq, faceIdx);
+    this.sendOp(indices, colorIdx, seq, faceIdx);
+    return changed;
+  }
+
+  /**
+   * Paint cells with per-cell values - what undo/redo and a pasted region need.
+   * Still one op, still one stamp.
+   */
+  paintVaried(indices, values, faceIdx = this.design.active) {
+    if (!indices.length) return 0;
+    const seq = this.nextSeq();
+    const g = this.design.faceAt(faceIdx);
+    if (!g) return 0;
+    const byColor = new Map();
+    for (let i = 0; i < indices.length; i++) {
+      const c = values[i] | 0;
+      if (!byColor.has(c)) byColor.set(c, []);
+      byColor.get(c).push(indices[i]);
+    }
+    let changed = 0;
+    for (const [c, list] of byColor) {
+      changed += this.paintLocal(list, c, seq, faceIdx);
+      this.sendOp(list, c, seq, faceIdx);
+    }
     return changed;
   }
 
   clear() {
     const seq = this.nextSeq();
-    this.grid.clearAll(seq, this.me.slot || 0);
-    this._dropPaced();
+    this.design.clearAll(seq, this.me.slot || 0);
+    if (this.display) this.display.drop();
     this.emit('grid', { local: true, cleared: true });
     this._send({ k: 'clear', seq });
   }
 
-  /** Replace the board with a different Heartopia size. Destructive by design. */
-  setBoard(ratio, level) {
+  /** Switch the whole room to another Heartopia item. Destructive by design. */
+  setItem(itemId) {
+    if (!findItem(itemId)) return false;
     const seq = this.nextSeq();
-    this.room = { ratio, level };
-    const d = dimsFor(ratio, level);
-    this.grid.resize(d.w, d.h);
-    this.grid.clearAll(seq, this.me.slot || 0);
-    this._dropPaced();
+    this.design.setItem(itemId);
+    if (this.display) this.display.drop();
     this.emit('grid', { local: true, cleared: true, resized: true });
-    this._send({ k: 'board', ratio, level, seq });
-    this.emit('board', { ...this.room });
+    this._send({ k: 'design', item: itemId, seq });
+    this.emit('design', { item: itemId, faces: this.design.item.faces });
+    return true;
+  }
+
+  /** Resize a canvas design. Same message, so both old and new clients follow. */
+  setBoard(ratio, level) {
+    return this.setItem(itemIdForBoard(ratio, level));
+  }
+
+  /** Which face is on screen. Local-only: nobody needs to know where your camera is. */
+  switchFace(i) {
+    const before = this.design.active;
+    const face = this.design.setActive(i);
+    if (before !== this.design.active) {
+      if (this.display) this.display.sync(this.design.active);
+      this.emit('face', { index: this.design.active, face });
+    }
+    return face;
+  }
+
+  /**
+   * Block progress for one face, as a bit-per-block base64 blob. Small (a
+   * 256x128 duvet at 5x5 is 1,352 blocks = 1.3 KB) and sent only on a change.
+   */
+  sendBlocks(faceIdx, flagsB64) {
+    this._send({ k: 'blocks', f: faceIdx, flags: flagsB64, seq: this.nextSeq() });
+  }
+
+  /** Guide lines: an underlay, not pixels, so they sync as their own small op. */
+  setGuides(lines, faceIdx = this.design.active) {
+    this.design.setGuides(faceIdx, lines);
+    this.emit('guides', { face: faceIdx, lines });
+    this._send({ k: 'guides', f: faceIdx, lines, seq: this.nextSeq() });
   }
 
   setProfile(patch) {
@@ -255,7 +353,7 @@ export class Room extends Emitter {
   }
 
   sendPointers(points) {
-    this._send({ k: 'ptr', p: points });
+    this._send({ k: 'ptr', p: points, f: this.design.active });
   }
 
   /* ------------------------- receiving ------------------------- */
@@ -294,8 +392,15 @@ export class Room extends Emitter {
         return this._onOp(msg, slot);
       case 'clear':
         return this._onClear(msg, slot);
+      case 'design':
+        return this._onDesign(msg, slot);
+      // Older rooms announced a board resize instead of an item change.
       case 'board':
         return this._onBoard(msg, slot);
+      case 'guides':
+        return this._onGuides(msg);
+      case 'blocks':
+        return this._onBlocks(msg);
       case 'snapshot':
         if (msg.to && msg.to !== this.me.clientId) return;
         return this._onSnapshot(msg);
@@ -362,15 +467,15 @@ export class Room extends Emitter {
       slot: entry.slot,
       room: this.room,
       roster: this.roster,
-      ...this.grid.toSnapshot(this.lamport),
+      ...this.design.toSnapshot(this.lamport),
     });
   }
 
   _onWelcome(msg) {
     if (msg.slot != null) this.me.slot = msg.slot;
-    if (msg.room && isValidRatio(msg.room.ratio)) this.room = { ...msg.room };
     if (msg.roster) this._onRoster(msg.roster);
-    if (msg.cells) this._onSnapshot(msg);
+    if (msg.faces) this._onSnapshot(msg);
+    else if (msg.room && msg.room.item) this.design.setItem(msg.room.item);
     this.emit('ready', { slot: this.me.slot, room: { ...this.room } });
   }
 
@@ -390,60 +495,86 @@ export class Room extends Emitter {
   _onProfile(clientId, msg) {
     const e = this._roster.get(clientId);
     if (!e) return;
-    Object.assign(e, { nick: msg.nick ?? e.nick, color: msg.color ?? e.color, device: msg.device ?? e.device, seen: Date.now() });
+    Object.assign(e, {
+      nick: msg.nick ?? e.nick,
+      color: msg.color ?? e.color,
+      device: msg.device ?? e.device,
+      seen: Date.now(),
+    });
     this.emit('roster', this.roster);
   }
 
   _onOp(msg, slot) {
     if (msg.from === this.me.clientId) return; // already applied locally
+    const face = clampFace(msg.f, this.design.faces.length);
     const cells = b64ToIndices(msg.cells);
     if (!cells.length) return;
     // Truth first, on every machine: the grid always matches the wire the
     // instant a packet lands, so checksums and snapshots stay correct whether
     // or not anything is still being animated.
-    const changed = this.paintRemote(cells, msg.c | 0, msg.seq | 0, slot);
+    const changed = this.design.paint(cells, msg.c | 0, msg.seq | 0, slot, face);
     // Then the screen, which is allowed to take its time catching up.
-    if (this.display && changed) this.display.add(cells, msg);
+    if (this.display && changed) this.display.add(face, cells, msg);
+    if (changed) this.emit('grid', { local: false, changed, face });
   }
 
-  /** Apply someone else's cells to our grid, without rebroadcasting. */
-  paintRemote(cells, colorIdx, seq, slot) {
-    const changed = this.grid.paint(cells, colorIdx, seq, slot);
-    if (changed) this.emit('grid', { local: false, changed });
+  /** Apply someone else's cells to a grid, without rebroadcasting. */
+  paintRemote(cells, colorIdx, seq, slot, faceIdx = this.design.active) {
+    const changed = this.design.paint(cells, colorIdx, seq, slot, faceIdx);
+    if (changed) this.emit('grid', { local: false, changed, face: faceIdx });
     return changed;
-  }
-
-  /** The board was replaced wholesale: nothing to animate, match it now. */
-  _dropPaced() {
-    if (this.display) this.display.sync();
   }
 
   _onClear(msg, slot) {
     if (msg.from === this.me.clientId) return;
-    this.grid.clearAll(msg.seq | 0, slot);
-    this._dropPaced();
+    this.design.clearAll(msg.seq | 0, slot);
+    if (this.display) this.display.drop();
     this.emit('grid', { local: false, cleared: true });
   }
 
+  _onDesign(msg, slot) {
+    if (msg.from === this.me.clientId) return;
+    if (!findItem(msg.item)) return;
+    this.design.setItem(msg.item);
+    this.design.clearAll(msg.seq | 0, slot);
+    if (this.display) this.display.drop();
+    this.emit('grid', { local: false, cleared: true, resized: true });
+    this.emit('design', { item: msg.item, faces: this.design.item.faces });
+  }
+
+  /** Legacy: a peer that only knows ratio x level. */
   _onBoard(msg, slot) {
     if (msg.from === this.me.clientId) return;
-    if (!isValidRatio(msg.ratio)) return;
-    this.room = { ratio: msg.ratio, level: clampLevel(msg.level) };
-    const d = dimsFor(this.room.ratio, this.room.level);
-    this.grid.resize(d.w, d.h);
-    this.grid.clearAll(msg.seq | 0, slot);
-    this._dropPaced();
-    this.emit('grid', { local: false, cleared: true, resized: true });
-    this.emit('board', { ...this.room });
+    this._onDesign({ from: msg.from, item: itemIdForBoard(msg.ratio, msg.level), seq: msg.seq }, slot);
+  }
+
+  _onGuides(msg) {
+    if (msg.from === this.me.clientId) return;
+    const face = clampFace(msg.f, this.design.faces.length);
+    this.design.setGuides(face, Array.isArray(msg.lines) ? msg.lines : []);
+    this.emit('guides', { face, lines: this.design.guides[face] });
+  }
+
+  _onBlocks(msg) {
+    if (msg.from === this.me.clientId) return;
+    const face = clampFace(msg.f, this.design.faces.length);
+    let flags;
+    try {
+      flags = b64ToBytes(msg.flags);
+    } catch (_) {
+      return;
+    }
+    if (!flags.length) return;
+    this.emit('blocks', { face, flags });
   }
 
   _onSnapshot(msg) {
     try {
-      this.grid.applySnapshot(msg);
+      this.design.applySnapshot(msg);
       if (typeof msg.seq === 'number' && msg.seq > this.lamport) this.lamport = msg.seq;
       // A snapshot is the whole truth: the screen stops animating and matches it.
-      this._dropPaced();
-      this.emit('grid', { local: false, snapshot: true });
+      if (this.display) this.display.drop();
+      this.emit('grid', { local: false, snapshot: true, resized: true });
       this.emit('sync', { ok: true });
     } catch (e) {
       console.error('rejected snapshot:', e.message);
@@ -453,13 +584,13 @@ export class Room extends Emitter {
 
   _onSyncReq(fromId) {
     if (!this.authority || fromId === this.me.clientId) return;
-    this._send({ k: 'snapshot', to: fromId, ...this.grid.toSnapshot(this.lamport) });
+    this._send({ k: 'snapshot', to: fromId, ...this.design.toSnapshot(this.lamport) });
   }
 
   _onHdr(msg) {
     if (msg.from === this.me.clientId) return;
     if (!msg.checksum) return;
-    if (msg.checksum !== this.grid.checksum()) {
+    if (msg.checksum !== this.design.checksum()) {
       this.emit('sync', { ok: false, drift: true });
       this._send({ k: 'sync-req' });
     }
@@ -467,7 +598,13 @@ export class Room extends Emitter {
 
   _onPtr(msg, fromId, slot) {
     if (msg.from === this.me.clientId) return;
-    this.emit('ptr', { from: fromId, slot, sentAt: msg.ts, points: msg.p || [] });
+    this.emit('ptr', {
+      from: fromId,
+      slot,
+      sentAt: msg.ts,
+      face: clampFace(msg.f, this.design.faces.length),
+      points: msg.p || [],
+    });
   }
 
   /* ------------------------- authority housekeeping ------------------------- */
@@ -513,7 +650,12 @@ export class Room extends Emitter {
       this._send({ k: 'time', t: Date.now() });
       if (Date.now() - this._lastHdr >= CONFIG.timings.repairMs) {
         this._lastHdr = Date.now();
-        this._send({ k: 'state-hdr', version: this.grid.version, checksum: this.grid.checksum(), seq: this.lamport });
+        this._send({
+          k: 'state-hdr',
+          version: this.design.version,
+          checksum: this.design.checksum(),
+          seq: this.lamport,
+        });
       }
     } else {
       // Nobody to ask yet? Keep nudging until we have a slot.
@@ -549,3 +691,11 @@ export class Room extends Emitter {
     this.status = 'offline';
   }
 }
+
+/** A face index from the wire is untrusted: an old peer sends none, a bad one sends anything. */
+function clampFace(f, n) {
+  const i = Number.isFinite(f) ? f | 0 : 0;
+  return Math.max(0, Math.min(n - 1, i));
+}
+
+export { boardForItem };

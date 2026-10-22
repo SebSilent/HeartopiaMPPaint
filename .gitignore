@@ -11,6 +11,10 @@ _research/
 PLAN.md
 REPORT.md
 
+# browser-check output and scratch (tools/check*.cjs write captures here)
+/_shots/
+/tools/_scratch.cjs
+
 # logs / os noise
 *.log
 npm-debug.log*

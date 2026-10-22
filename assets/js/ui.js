@@ -150,9 +150,7 @@ export class UI {
     // Identity colours: the 13 Heartopia group primaries.
     e.myColors.innerHTML = HEARTOPIA_GROUPS.map(
       (g, i) =>
-        `<button class="pick-color" data-color="${g.main}" style="--c:${g.main}" title="${
-            GROUP_BASE[g.group - 1] ? GROUP_BASE[g.group - 1].code + ' base ' + GROUP_BASE[g.group - 1].hex : 'Group ' + g.group
-          }" aria-label="Colour group ${g.group}"></button>`
+        `<button class="pick-color" data-color="${g.main}" style="--c:${g.main}" title="Group ${g.group}" aria-label="Group ${g.group}"></button>`
     ).join('');
     e.myColors.addEventListener('click', (ev) => {
       const b = ev.target.closest('.pick-color');
@@ -317,7 +315,11 @@ export class UI {
     const e = this.el;
     e.groups.innerHTML = HEARTOPIA_GROUPS.map(
       (g, i) =>
-        `<button class="group" data-group="${i}" style="--c:${g.main}" title="Group ${g.group}: ${g.colors.length} shades" aria-label="Colour group ${g.group} of ${HEARTOPIA_GROUPS.length}, ${g.colors.length} shades"></button>`
+        `<button class="group" data-group="${i}" style="--c:${g.main}" title="${
+          GROUP_BASE[i] ? GROUP_BASE[i].code + ' ' + GROUP_BASE[i].hex : 'Group ' + g.group
+        } · ${g.colors.length} shades" aria-label="Colour group ${g.group} of ${HEARTOPIA_GROUPS.length}, ${
+          g.colors.length
+        } shades"></button>`
     ).join('');
     e.groups.addEventListener('click', (ev) => {
       const b = ev.target.closest('.group');

@@ -437,7 +437,7 @@ async function stagePanels(browser, errors) {
     const inside = box && box.x >= stage.x - 1 && box.y >= stage.y - 1 && box.x + box.width <= stage.x + stage.width + 1;
     ok(btn + ' opens ' + panel, vis, box ? Math.round(box.width) + 'x' + Math.round(box.height) : 'not visible');
     ok(btn + ' stays inside the board', !!inside, JSON.stringify(box));
-    await page.screenshot({ path: '_shots' + btn.replace(/[^a-z]/gi, '') + '.png' });
+    await page.screenshot({ path: path.join(ROOT, '_shots', btn.replace(/[^a-z]/gi, '') + '.png') });
     const reach = await whyNotClickable(page, panel + ' .panel-x');
     ok(btn + ' close button can be reached', reach === 'clickable', reach);
     await page.click(panel + ' .panel-x', { timeout: 5000 }).catch((e) =>

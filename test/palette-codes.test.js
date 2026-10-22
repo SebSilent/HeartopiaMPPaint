@@ -6,7 +6,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { HEARTOPIA_GROUPS, FLAT_COLORS, COLOR_CODES, GAME_BASE } from '../assets/js/data/heartopia-palette.js';
+import { HEARTOPIA_GROUPS, FLAT_COLORS, COLOR_CODES, GAME_BASE, GROUP_BASE } from '../assets/js/data/heartopia-palette.js';
 
 const game = JSON.parse(readFileSync(new URL('../assets/data/heartopia-game-palette.json', import.meta.url), 'utf8'));
 
@@ -66,6 +66,23 @@ test('each code points at the same colour the game lists at that code', () => {
     ['15-7'],
     `shades more than 2 apart: ${JSON.stringify(wide)}`
   );
+});
+
+test('each group names the base colour the game shows for it', () => {
+  assert.equal(GROUP_BASE.length, HEARTOPIA_GROUPS.length);
+  const byCode = new Map();
+  for (const row of Object.values(game.detail)) for (const c of row) byCode.set(c.code, c.hex);
+  const baseBy = new Map(game.base.map((b) => [b.code, b.hex]));
+  GROUP_BASE.forEach((gb, gi) => {
+    assert.equal(gb.key, game.detailKeys[gi], `group ${gi + 1} row`);
+    assert.equal(gb.hex, baseBy.get(gb.key), `group ${gi + 1} base hex`);
+    assert.equal(byCode.get(gb.code), gb.hex, `group ${gi + 1} code ${gb.code} points at its base`);
+  });
+  // The rows run dark to light, so the base is shade 2, not shade 1. Only row
+  // 01 has its darkest shade as the base. Anyone tempted to "tidy" this into
+  // `${key}-1` breaks every group label.
+  assert.equal(GROUP_BASE[0].code, '01-1');
+  for (let gi = 1; gi < GROUP_BASE.length; gi++) assert.equal(GROUP_BASE[gi].code, `${GROUP_BASE[gi].key}-2`);
 });
 
 test('the game base row is shipped for the picker to reference', () => {

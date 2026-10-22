@@ -8,7 +8,7 @@
  * `actions` object and calls it, the same way the dock always has.
  */
 
-import { HEARTOPIA_GROUPS, FLAT_COLORS, COLOR_CODES } from './data/heartopia-palette.js';
+import { HEARTOPIA_GROUPS, FLAT_COLORS, COLOR_CODES, GROUP_BASE } from './data/heartopia-palette.js';
 import { RATIOS, LEVELS, BRUSH_SIZES } from './presets.js';
 import { CATALOG, FAMILIES, FAMILY, findItem, cellTotal, itemIdForBoard, boardForItem } from './game/slots.js';
 import { clamp, escapeHtml, initials, makeRoomCode, normalizeRoomCode, readableInk, detectDevice } from './util.js';
@@ -150,7 +150,9 @@ export class UI {
     // Identity colours: the 13 Heartopia group primaries.
     e.myColors.innerHTML = HEARTOPIA_GROUPS.map(
       (g, i) =>
-        `<button class="pick-color" data-color="${g.main}" style="--c:${g.main}" title="Group ${g.group}" aria-label="Group ${g.group}"></button>`
+        `<button class="pick-color" data-color="${g.main}" style="--c:${g.main}" title="${
+            GROUP_BASE[g.group - 1] ? GROUP_BASE[g.group - 1].code + ' base ' + GROUP_BASE[g.group - 1].hex : 'Group ' + g.group
+          }" aria-label="Colour group ${g.group}"></button>`
     ).join('');
     e.myColors.addEventListener('click', (ev) => {
       const b = ev.target.closest('.pick-color');

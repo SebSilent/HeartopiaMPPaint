@@ -11,6 +11,12 @@ import { clamp } from './util.js';
 // able to trust what they see, and an empty Heartopia board reads as white.
 const PAPER = '#ffffff';
 const PAPER_EDGE = '#c9b997';
+// Empty cells are alpha 0, so the board has to carry its own "no paint here"
+// layer: the Photoshop transparency squares. Kept light on purpose, the paint
+// has to stay readable over it.
+const CHECK_A = '#ffffff';
+const CHECK_B = '#dfe3e6';
+const CHECK_STEP = 8; // css px per square, so it reads the same on every board size
 const GRID_LINE = 'rgba(60,45,25,0.16)';
 const GRID_LINE_MAJOR = 'rgba(60,45,25,0.30)';
 const OUTLINE_INK = 'rgba(36,26,16,0.9)';
@@ -203,6 +209,19 @@ export class View {
     ctx.fillRect(r.x, r.y, r.w, r.h);
     ctx.restore();
 
+    // transparency squares under the paint, clipped to the board
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(r.x, r.y, r.w, r.h);
+    ctx.clip();
+    for (let y = r.y, j = 0; y < r.y + r.h; y += CHECK_STEP, j++) {
+      for (let x = r.x, i = 0; x < r.x + r.w; x += CHECK_STEP, i++) {
+        ctx.fillStyle = (i + j) % 2 ? CHECK_B : CHECK_A;
+        ctx.fillRect(x, y, CHECK_STEP, CHECK_STEP);
+      }
+    }
+    ctx.restore();
+
     // pixels - from the display copy, which may be a moment behind the grid
     g.fillRGBA(this._u32, this.displayCells());
     this._sctx.putImageData(this._image, 0, 0);
@@ -259,15 +278,18 @@ export class View {
     const o = this.outline;
     const sx = r.w / o.w;
     const sy = r.h / o.h;
+    const rings = o.rings || [o.ring];
     ctx.save();
     ctx.beginPath();
-    o.ring.forEach((p, i) => {
-      const x = r.x + p[0] * sx;
-      const y = r.y + p[1] * sy;
-      if (i === 0) ctx.moveTo(x, y);
-      else ctx.lineTo(x, y);
-    });
-    ctx.closePath();
+    for (const ring of rings) {
+      ring.forEach((p, i) => {
+        const x = r.x + p[0] * sx;
+        const y = r.y + p[1] * sy;
+        if (i === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.closePath();
+    }
     ctx.strokeStyle = OUTLINE_INK;
     ctx.lineWidth = 2;
     ctx.lineJoin = 'round';

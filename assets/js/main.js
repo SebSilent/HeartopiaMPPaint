@@ -21,7 +21,8 @@ import { History, patchWrite } from './game/history.js';
 import { Blueprint } from './ui/blueprint.js';
 import { Preview3D } from './game/render3d.js';
 import { findItem, itemIdForBoard, cellTotal } from './game/slots.js';
-import { outlineFor, maskFor, maskInside, hasOutline } from './game/outline.js';
+import { outlineFor } from './game/outline.js';
+import { faceInfo, paintable } from './game/faces.js';
 import { loadImage, rasterize, photoToCells, screenshotToCells, applyCellsToFace, matchSlot } from './ui/importer.js';
 import { palette } from './color/science.js';
 
@@ -400,7 +401,9 @@ function wireRoom(r) {
       refreshTrace();
     }
     view.markDirty();
-    if (preview3d) preview3d.invalidate();
+    // Re-bake the face textures in place: the triangles hold the canvases they
+    // were built from, so clearing the cache alone would keep the old pixels up.
+    if (preview3d) preview3d.refresh();
   });
 
   r.on('sync', (s) => {
@@ -451,9 +454,8 @@ function switchFace(i) {
 /* ---------------- garment outline ---------------- */
 
 /**
- * Show the game's silhouette for the face on screen, when it has one. Canvas
- * boards and furniture have no outline data, so the toggle simply has nothing
- * to draw there.
+ * Show the game's silhouette for the face on screen, when it has one. Free
+ * canvas boards are plain rectangles, so the toggle has nothing to draw there.
  */
 function setOutlineFor(faceId) {
   // 'has' is a property of the face and decides whether the toggle is offered at
@@ -463,11 +465,35 @@ function setOutlineFor(faceId) {
   // Read the item off the room, not off the mirror in state: 'ready' can land
   // before the handlers that fill the mirror in.
   const item = room.design.id;
-  const has = hasOutline(item, faceId);
-  const on = state.showOutline && has;
-  view.outline = on ? outlineFor(item, faceId) : null;
-  const m = has ? maskFor(item, faceId) : null;
-  ui.setOutlineInfo(has, m ? maskInside(m) : 0, m ? m.length : 0, room.design.item.name);
+  // Clothing uses the outline in the mesh header, which is the print area.
+  // Every other slot uses the game's own maskLines for that face.
+  const o = outlineFor(item, faceId) || faceOutline(item, faceId);
+  const on = state.showOutline && !!o;
+  view.outline = on ? o : null;
+  const cells = faceCells(item, faceId);
+  // paintable() only knows the game's own disabled cells, which clothing does
+  // not carry in this data, so fall back to the whole face.
+  const free = paintable(item, faceId) || cells;
+  ui.setOutlineInfo(!!o, free, cells, room.design.item.name);
+}
+
+/**
+ * The game's maskLines for a face, shaped the way the view draws one. Clothing
+ * faces come from the mesh header instead, so this is what covers furniture,
+ * the book, and anything the catalog has a silhouette for.
+ */
+function faceOutline(item, faceId) {
+  const f = faceInfo(item, faceId);
+  if (!f || !f.rings || !f.rings.length) return null;
+  return { w: f.w, h: f.h, rings: f.rings };
+}
+
+/** Cells on a face, whether or not the game has data for it. */
+function faceCells(item, faceId) {
+  const f = faceInfo(item, faceId);
+  if (f) return f.w * f.h;
+  const o = outlineFor(item, faceId);
+  return o ? o.w * o.h : 0;
 }
 
 function applyOutline() {
@@ -635,7 +661,13 @@ function open3d() {
   if (!room) return;
   const cv = document.getElementById('d3Canvas');
   if (!preview3d) {
-    preview3d = new Preview3D(cv, (faceId) => faceTexture(faceId), (itemId, faceId) => outlineFor(itemId, faceId));
+    preview3d = new Preview3D(
+      cv,
+      (faceId) => faceTexture(faceId),
+      // The same union the 2D layer uses: mesh outline for clothing, maskLines
+      // for everything else.
+      (itemId, faceId) => outlineFor(itemId, faceId) || faceOutline(itemId, faceId)
+    );
     bindOrbit(cv);
   }
   rebuild3d();
@@ -663,11 +695,21 @@ function faceTexture(faceId) {
   c.width = g.w;
   c.height = g.h;
   const ctx = c.getContext('2d');
+  // The garment's own paper. Untouched cells come back transparent from the
+  // grid, so this has to be laid down first and the paint composited over it:
+  // putImageData writes pixels instead of blending them, and a face baked that
+  // way turns the whole garment into a hole the backdrop shines through.
+  ctx.imageSmoothingEnabled = false;
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, g.w, g.h);
-  const img = ctx.createImageData(g.w, g.h);
+  const paint = document.createElement('canvas');
+  paint.width = g.w;
+  paint.height = g.h;
+  const pctx = paint.getContext('2d');
+  const img = pctx.createImageData(g.w, g.h);
   g.fillRGBA(new Uint32Array(img.data.buffer), room.display ? room.display.cellsFor(idx) : null);
-  ctx.putImageData(img, 0, 0);
+  pctx.putImageData(img, 0, 0);
+  ctx.drawImage(paint, 0, 0);
   return c;
 }
 

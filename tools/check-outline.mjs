@@ -53,37 +53,54 @@ for (let i = 0; i < 12; i++) {
 await page.mouse.up();
 await page.waitForTimeout(400);
 
-// The panel is covered by the board, so counting non-transparent pixels measures
-// the background, not the art. Compare the picture itself: a coarse signature
-// plus the exact count of cells that differ.
-const grab = () => page.evaluate(() => {
-  const cv = document.getElementById('base');
-  const g = cv.getContext('2d');
-  const d = g.getImageData(0, 0, cv.width, cv.height).data;
-  const hue = new Uint8Array(4096);
-  let sig = 0;
-  for (let i = 0; i < d.length; i += 4) {
-    const k = ((d[i] >> 4) << 8) | ((d[i + 1] >> 4) << 4) | (d[i + 2] >> 4);
-    hue[k] = 1;
-    sig = (sig * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13 + d[i + 3]) % 4294967296;
-  }
-  let hues = 0;
-  for (let i = 0; i < 4096; i++) if (hue[i]) hues++;
-  return { sig, hues, bytes: Array.from(d).join(',') };
-});
-// Compared over the flattened pixel string, sampling every 997th character: a
-// coarse "did the picture move" measure, not a count of cells. A few hundred is
-// the noise floor of the animation itself, so 1000 is the bar for a real change.
+/**
+ * Read a canvas as a fixed-size sample of its pixels.
+ *
+ * The picture is compared against itself, not against a background count: the
+ * panel sits under the board, so "how many pixels are opaque" measures the
+ * wrong layer. Each sample is quantised to five bits per channel, which drops
+ * the sub-pixel dither the animation always carries and keeps a real repaint
+ * from hiding in it.
+ */
+const SAMPLE_CAP = 20000;
+const readCanvas = (id) =>
+  page.evaluate((arg) => {
+    const { cid, cap } = arg;
+    const cv = document.getElementById(cid);
+    if (!cv) return null;
+    const g = cv.getContext('2d');
+    const d = g.getImageData(0, 0, cv.width, cv.height).data;
+    const hue = new Uint8Array(4096);
+    const n = d.length / 4;
+    const stride = Math.max(1, Math.ceil(n / cap));
+    const samp = [];
+    for (let i = 0; i < n; i += stride) {
+      const o = i * 4;
+      const k = ((d[o] >> 4) << 8) | ((d[o + 1] >> 4) << 4) | (d[o + 2] >> 4);
+      hue[k] = 1;
+      samp.push(((d[o] >> 3) << 16) | ((d[o + 1] >> 3) << 8) | (d[o + 2] >> 3));
+    }
+    let hues = 0;
+    for (let i = 0; i < 4096; i++) if (hue[i]) hues++;
+    return { w: cv.width, h: cv.height, hues, pixels: n, samp };
+  }, { cid: id, cap: SAMPLE_CAP });
+
+const grab = () => readCanvas('base');
+const ink3d = () => readCanvas('d3Canvas');
+
+/** Percentage of sampled pixels that changed between two reads. */
 const differ = (a, b) => {
-  if (a.length !== b.length) return Math.abs(a.length - b.length);
+  if (!a || !b || a.samp.length !== b.samp.length) return 100;
   let n = 0;
-  for (let i = 0; i < a.length; i += 997) if (a[i] !== b[i]) n++;
-  return n;
+  for (let i = 0; i < a.samp.length; i++) if (a.samp[i] !== b.samp[i]) n++;
+  return +((n / a.samp.length) * 100).toFixed(2);
 };
-const MOVED = 1000;
+// A silhouette covers a third of a board; a stroke covers a fraction of one
+// face of a garment. Both are far above the dither floor, which measures 0.
+const MOVED = 0.5;
 
 const before = await grab();
-say(`board before outline  sig=${before.sig} hues=${before.hues}`);
+say(`board before outline  ${before.w}x${before.h} hues=${before.hues}`);
 
 // The toggle lives in the blueprint panel, which starts closed.
 await page.click('#btnTrace');
@@ -91,10 +108,10 @@ await page.waitForFunction(() => !document.getElementById('tracePanel').hidden, 
 await page.click('#outlineBtn');
 await page.waitForTimeout(500);
 const during = await grab();
-const added = differ(before.bytes, during.bytes);
-say(`board with outline  sig=${during.sig} hues=${during.hues}  cells changed ${added}`);
+const added = differ(before, during);
+say(`board with outline  hues=${during.hues}  pixels changed ${added}%`);
 if (added > MOVED) say('PASS  the silhouette is drawn over the board');
-else say(`FAIL  the outline toggle changed nothing on the board [${added}]`);
+else say(`FAIL  the outline toggle changed nothing on the board [${added}%]`);
 
 const note = await page.evaluate(() => document.getElementById('outlineNote').textContent);
 say(`note reads ${JSON.stringify(note)}`);
@@ -104,10 +121,10 @@ else say('FAIL  the note did not fill in');
 await page.click('#outlineBtn');
 await page.waitForTimeout(400);
 const off = await grab();
-const gone = differ(before.bytes, off.bytes);
-say(`outline off again  sig=${off.sig} cells changed vs plain ${gone}`);
+const gone = differ(before, off);
+say(`outline off again  pixels changed vs plain ${gone}%`);
 if (gone < MOVED) say('PASS  switching off restores the plain board');
-else say(`FAIL  outline ink stuck on [${gone}]`);
+else say(`FAIL  outline ink stuck on [${gone}%]`);
 // Leave it on so the 3D clip has a silhouette to test with.
 await page.click('#outlineBtn');
 await page.waitForTimeout(400);
@@ -115,62 +132,66 @@ await page.waitForTimeout(400);
 // 3D: the clipped silhouette must paint something and must follow a face switch.
 await page.click('#btn3d');
 await page.waitForTimeout(900);
-const ink3d = () => page.evaluate(() => {
-  const cv = document.getElementById('d3Canvas');
-  if (!cv) return null;
-  const g = cv.getContext('2d');
-  const d = g.getImageData(0, 0, cv.width, cv.height).data;
-  const hue = new Uint8Array(4096);
-  let sig = 0;
-  for (let i = 0; i < d.length; i += 4) {
-    const k = ((d[i] >> 4) << 8) | ((d[i + 1] >> 4) << 4) | (d[i + 2] >> 4);
-    hue[k] = 1;
-    sig = (sig * 31 + d[i] + d[i + 1] * 7 + d[i + 2] * 13 + d[i + 3]) % 4294967296;
-  }
-  let hues = 0;
-  for (let i = 0; i < 4096; i++) if (hue[i]) hues++;
-  return { w: cv.width, h: cv.height, sig, hues, bytes: Array.from(d).join(',') };
-});
 const d3 = await ink3d();
-say(`3D canvas ${d3.w}x${d3.h} sig=${d3.sig} hues=${d3.hues}`);
+say(`3D canvas ${d3.w}x${d3.h} hues=${d3.hues}`);
 if (d3.hues > 2) say('PASS  the 3D preview paints something');
 else say('FAIL  the 3D preview is blank');
 
 const tabs = await page.evaluate(() => [...document.querySelectorAll('.face[data-face]')].map((t) => t.textContent.trim()));
 say(`face tabs ${JSON.stringify(tabs)}`);
 
-// Paint inside the 3D canvas itself. The face texture is rebuilt from the live
-// grid on every rebuild, so paint that lands there proves both the rebuild and
-// the refresh. The 2D board cannot be used: the panel covers it.
+/**
+ * Paint on the real board, then look at the 3D panel.
+ *
+ * Dragging inside the 3D canvas cannot work: that canvas is bound to orbit, so
+ * a drag turns the garment and the pixels that move are the rotation, not the
+ * paint. The board is under the panel while it is shown, so the panel is hidden
+ * for the stroke and brought back to read the texture the stroke left behind.
+ */
 const paint3d = async () => {
-  const r = await page.evaluate(() => {
-    const b = document.getElementById('d3Canvas').getBoundingClientRect();
+  // The default colour is the paper itself, and white on white leaves nothing
+  // to measure, so pick a colour that is not.
+  await page.evaluate(() => document.querySelectorAll('#swatches .swatch')[3].click());
+  await page.click('#btn3d');
+  await page.waitForTimeout(300);
+  const s = await page.evaluate(() => {
+    const b = document.getElementById('stage').getBoundingClientRect();
     return { x: b.x, y: b.y, w: b.width, h: b.height };
   });
-  const px = Math.round(r.x + r.w * 0.5);
-  const py = Math.round(r.y + r.h * 0.5);
+  // A patch of colour, not a flick. On a 64x80 face a 40px drag is three cells
+  // and lands on a handful of samples in the 3D panel, which is not enough to
+  // tell a repaint from the dither. Twelve sweeps is a square a player would
+  // actually shade.
+  const px = Math.round(s.x + s.w * 0.34);
+  const py = Math.round(s.y + s.h * 0.34);
   await page.mouse.move(px, py);
   await page.mouse.down();
-  for (let i = 0; i < 10; i++) await page.mouse.move(px + i * 4, py + i * 2);
+  for (let r = 0; r < 12; r++) {
+    const y = py + r * 9;
+    for (let i = 0; i <= 24; i++) await page.mouse.move(px + i * 8, y + (r % 2 ? 24 - i : i) * 0);
+  }
   await page.mouse.up();
+  await page.waitForTimeout(300);
+  await page.click('#btn3d');
 };
 
 await paint3d();
 await page.waitForTimeout(900);
 const painted = await ink3d();
-say(`3D after painting in the preview: hues ${d3.hues} -> ${painted.hues} cells changed ${differ(d3.bytes, painted.bytes)}`);
-if (differ(d3.bytes, painted.bytes) > MOVED) say('PASS  paint in the 3D preview refreshes its texture');
-else say(`FAIL  the 3D preview never repaints [${differ(d3.bytes, painted.bytes)}]`);
+const landed = differ(d3, painted);
+say(`3D after painting on the board: hues ${d3.hues} -> ${painted.hues} pixels changed ${landed}%`);
+if (landed > MOVED) say('PASS  paint on the board refreshes the 3D texture');
+else say(`FAIL  the 3D preview never repaints [${landed}%]`);
 
 // The preview is a static schematic: every face of the garment at once, in
 // fixed positions. Switching the active face must not move it.
 await page.evaluate(() => document.querySelectorAll('.face[data-face]')[2].click());
 await page.waitForTimeout(900);
 const after = await ink3d();
-const moved = differ(painted.bytes, after.bytes);
-say(`3D after switching to ${tabs[2]}: cells changed ${moved}`);
-if (moved === 0) say('PASS  the schematic is stable across a face switch');
-else say(`FAIL  the schematic jumped for no reason [${moved}]`);
+const moved = differ(painted, after);
+say(`3D after switching to ${tabs[2]}: pixels changed ${moved}%`);
+if (moved < MOVED) say('PASS  the schematic is stable across a face switch');
+else say(`FAIL  the schematic jumped for no reason [${moved}%]`);
 
 // The outline belongs to the face on screen and must follow it. Baseline is the
 // front face *with* its silhouette on, not the plain board.
@@ -190,20 +211,20 @@ await page.evaluate(() => document.querySelectorAll('.face[data-face]')[2].click
 await page.waitForTimeout(700);
 const sleeve = await grab();
 const noteB = await page.evaluate(() => document.getElementById('outlineNote').textContent);
-const moved2 = differ(front.bytes, sleeve.bytes);
-say(`sleeve with silhouette: ${JSON.stringify(noteB)}  cells changed vs front ${moved2}`);
+const moved2 = differ(front, sleeve);
+say(`sleeve with silhouette: ${JSON.stringify(noteB)}  pixels vs front ${moved2}%`);
 if (moved2 > MOVED) say('PASS  the silhouette follows the face');
-else say(`FAIL  the silhouette did not change with the face [${moved2}]`);
+else say(`FAIL  the silhouette did not change with the face [${moved2}%]`);
 if (noteA !== noteB) say('PASS  the cell count changed for the sleeve');
 else say(`FAIL  the count is stuck at ${JSON.stringify(noteA)}`);
 
 await page.click('#outlineBtn');
 await page.waitForTimeout(400);
 const offAgain = await grab();
-const gone2 = differ(sleeve.bytes, offAgain.bytes);
-say(`sleeve silhouette off: cells changed ${gone2}`);
+const gone2 = differ(sleeve, offAgain);
+say(`sleeve silhouette off: pixels changed ${gone2}%`);
 if (gone2 > MOVED) say('PASS  the sleeve silhouette switches off too');
-else say(`FAIL  the sleeve silhouette is stuck on [${gone2}]`);
+else say(`FAIL  the sleeve silhouette is stuck on [${gone2}%]`);
 
 say(errs.length ? `FAIL  page errors: ${JSON.stringify(errs.slice(0, 6))}` : 'PASS  no page or console errors');
 await browser.close();

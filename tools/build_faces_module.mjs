@@ -6,33 +6,66 @@ import { CLOTHING, FURNITURE, BOOK } from '../assets/js/game/slots.js';
 const data = JSON.parse(readFileSync('_scrape/catalog/ls-heartopia_presets_cache.json', 'utf8'));
 const groups = Array.isArray(data) ? data : Object.values(data)[0];
 
-const levels = [];
-for (const g of groups || []) {
-  for (const c of g.canvases || []) {
-    for (const f of c.faces || [c]) {
-      for (const lv of f.levels || (f.w ? [f] : [])) {
-        levels.push({ w: lv.w, h: lv.h, disabledPixels: lv.disabledPixels || null, maskLines: lv.maskLines || null });
-      }
-    }
-  }
-}
+/**
+ * Every item, against the catalog group that holds it.
+ *
+ * Matching by face size alone was wrong and quietly so: the book's faces are
+ * 150x114 and 150x84, which are also the XL 4:3 and XL 16:9 canvas boards, and
+ * the bucket's crown is 100x100, the XL square board. Those three faces matched
+ * a plain rectangle with no silhouette, got dropped for having nothing to say,
+ * and the book lost its outline. A group is one item and its canvases are that
+ * item's faces in order, so the group is the only honest way to pair them.
+ */
+const GROUPS = {
+  tshirt: 'preset-1777184841479',
+  tank: 'preset-1777278490477',
+  skirt: 'preset-1777290267757',
+  shorts: 'preset-1777298278879',
+  bucket: 'preset-1777301965325',
+  sweat: 'preset-1777617844320',
+  trousers: 'preset-1777627440426',
+  dress: 'preset-1777629592231',
+  cap: 'preset-1777787903161',
+  shoes: 'preset-1777800915342',
+  maryjanes: 'preset-1777838216361',
+  bed1: 'preset-1778155724575',
+  bed2: 'preset-1778313299042',
+  wardrobe: 'preset-1778316252932',
+  nightstand: 'preset-1778921383302',
+  tablelamp: 'preset-1778922985639',
+  chair: 'preset-1778923864990',
+  lowtable: 'preset-1778924748825',
+  sofa2: 'preset-1779103003287',
+  sofa1: 'preset-1779104637948',
+  floorlamp: 'preset-1779105268541',
+  book: 'preset-1777399477607',
+};
 
 const ours = [];
-for (const it of [...CLOTHING, ...FURNITURE, ...(BOOK ? [BOOK] : [])]) {
-  for (const f of it.faces) ours.push({ item: it.id, face: f.id, w: f.w, h: f.h });
-}
-
-const used = new Set();
-const items = {};
 const unmatched = [];
-for (const o of ours) {
-  const i = levels.findIndex((l, k) => !used.has(k) && l.w === o.w && l.h === o.h);
-  if (i < 0) {
-    unmatched.push(`${o.item}:${o.face} ${o.w}x${o.h}`);
+for (const it of [...CLOTHING, ...FURNITURE, ...(BOOK ? [BOOK] : [])]) {
+  const gid = GROUPS[it.id];
+  const group = (groups || []).find((g) => g.id === gid);
+  if (!group) {
+    unmatched.push(`${it.id}: no catalog group ${gid}`);
     continue;
   }
-  used.add(i);
-  const lv = levels[i];
+  const cs = group.canvases || [];
+  if (cs.length !== it.faces.length) {
+    unmatched.push(`${it.id}: group has ${cs.length} canvases, item has ${it.faces.length} faces`);
+    continue;
+  }
+  it.faces.forEach((f, i) => ours.push({ item: it.id, face: f.id, w: f.w, h: f.h, lv: cs[i] }));
+}
+
+const items = {};
+for (const o of ours) {
+  const canvas = o.lv;
+  const lv = (canvas.levels || [])[0];
+  if (!lv || lv.w !== o.w || lv.h !== o.h) {
+    unmatched.push(`${o.item}:${o.face} wants ${o.w}x${o.h}, group offers ${lv ? lv.w + 'x' + lv.h : 'nothing'}`);
+    continue;
+  }
 
   let rings = null;
   if (lv.maskLines) {

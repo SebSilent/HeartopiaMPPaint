@@ -22,16 +22,10 @@ const ICONS = {
   eraser: '<path d="M8 20h10"/><path d="M6 16l6-6 6 6-4 4H8z"/>',
   pick: '<path d="M12 2l2 6-4 4-2-2z"/><path d="M8 12l-5 8 8-5"/>',
   fill: '<path d="M5 9l7-7 7 7-7 7z"/><path d="M19 13c1.5 2 2 3 2 4a2 2 0 01-4 0c0-1 .5-2 2-4z"/>',
-  spray: '<path d="M9 8h6v12H9z"/><path d="M17 4h1M19 6h1M17 8h1M15 4h1"/><path d="M9 8l-3 3v9h3"/>',
   line: '<path d="M4 20L20 4"/>',
   rect: '<rect x="4" y="6" width="16" height="12"/>',
   ellipse: '<ellipse cx="12" cy="12" rx="8" ry="6"/>',
-  triangle: '<path d="M12 4l8 16H4z"/>',
-  star: '<path d="M12 3l2.6 6.2 6.4.5-4.9 4.2 1.5 6.3L12 17l-5.6 3.2 1.5-6.3L3 9.7l6.4-.5z"/>',
-  heart: '<path d="M12 20s-7-4.5-7-9.5A3.9 3.9 0 0112 8a3.9 3.9 0 017 2.5c0 5-7 9.5-7 9.5z"/>',
-  arrow: '<path d="M4 20L20 4"/><path d="M12 4h8v8"/>',
   polygon: '<path d="M12 3l8 6-3 10H7L4 9z"/>',
-  guide: '<path d="M3 17c4-8 8 4 12-4 2-4 4-4 6-3"/>',
   grid: '<rect x="4" y="4" width="16" height="16"/><path d="M10 4v16M16 4v16M4 10h16M4 16h16"/>',
   mirror: '<path d="M12 3v18"/><path d="M9 7L4 12l5 5"/><path d="M15 7l5 5-5 5"/>',
   undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h9a5 5 0 010 10H8"/>',
@@ -61,21 +55,18 @@ const DEVICE_ICON = { desktop: 'desktop', ipad: 'ipad', iphone: 'phone', android
 const PANELS = ['tracePanel', 'importPanel', 'd3Panel'];
 const BTN = { tracePanel: 'btnTrace', importPanel: 'btnImport', d3Panel: 'btn3d' };
 
+/** Tools that drag out a shape, and so own the filled/hollow switch. */
+const DRAG_TOOLS = ['line', 'rect', 'ellipse'];
+
 const TOOL_DEFS = [
   ['brush', 'Brush', 'B'],
   ['eraser', 'Eraser', 'E'],
   ['pick', 'Eyedropper', 'I'],
   ['fill', 'Bucket', 'F'],
-  ['spray', 'Spray', 'J'],
   ['line', 'Line', 'L'],
   ['rect', 'Rectangle', 'R'],
   ['ellipse', 'Ellipse', 'O'],
-  ['triangle', 'Triangle', 'T'],
-  ['star', 'Star', 'S'],
-  ['heart', 'Heart', 'H'],
-  ['arrow', 'Arrow', 'A'],
   ['polygon', 'Polygon', 'P'],
-  ['guide', 'Guide line', 'D'],
 ];
 
 export class UI {
@@ -359,7 +350,7 @@ export class UI {
     const chips = (name, opts, active) =>
       opts.map((o) => `<button class="opt" data-${name}="${o[0]}" title="${o[2]}">${o[1]}</button>`).join('') + '';
     let html = '';
-    if (st.tool === TOOLS.BRUSH || st.tool === TOOLS.ERASER || st.tool === TOOLS.SPRAY) {
+    if (st.tool === TOOLS.BRUSH || st.tool === TOOLS.ERASER) {
       html += row(
         'Shape',
         chips('shape', [
@@ -369,12 +360,7 @@ export class UI {
         'shape'
       );
     }
-    if (st.tool === TOOLS.SPRAY) {
-      html += `<span class="dock-label">Density</span><input class="slider" type="range" min="10" max="90" value="${Math.round(
-        st.sprayDensity * 100
-      )}" data-opt="density">`;
-    }
-    if (['line', 'rect', 'ellipse', 'triangle', 'star', 'heart'].includes(st.tool)) {
+    if (DRAG_TOOLS.includes(st.tool)) {
       html += row(
         'Style',
         chips('fillmode', [
@@ -426,7 +412,6 @@ export class UI {
       if (b.dataset.mirror) this.actions.setMirror(['off', 'x', 'y', 'xy'].indexOf(b.dataset.mirror));
     });
     e.toolOpts.addEventListener('input', (ev) => {
-      if (ev.target.dataset.opt === 'density') this.actions.setSprayDensity(Number(ev.target.value) / 100);
     });
   }
 

@@ -30,7 +30,6 @@ import CONFIG from './config.js';
 import {
   shapeCells,
   fillCells,
-  sprayCells,
   snapAngle,
   mirrored,
   mirrorIndices,
@@ -45,28 +44,14 @@ export const TOOLS = {
   ERASER: 'eraser',
   PICK: 'pick',
   FILL: 'fill',
-  SPRAY: 'spray',
   LINE: 'line',
   RECT: 'rect',
   ELLIPSE: 'ellipse',
-  TRIANGLE: 'triangle',
-  STAR: 'star',
-  HEART: 'heart',
-  ARROW: 'arrow',
   POLYGON: 'polygon',
-  GUIDE: 'guide',
 };
 
-const PAINT_TOOLS = new Set([TOOLS.BRUSH, TOOLS.ERASER, TOOLS.SPRAY]);
-const DRAG_SHAPES = new Set([
-  TOOLS.LINE,
-  TOOLS.RECT,
-  TOOLS.ELLIPSE,
-  TOOLS.TRIANGLE,
-  TOOLS.STAR,
-  TOOLS.HEART,
-  TOOLS.ARROW,
-]);
+const PAINT_TOOLS = new Set([TOOLS.BRUSH, TOOLS.ERASER]);
+const DRAG_SHAPES = new Set([TOOLS.LINE, TOOLS.RECT, TOOLS.ELLIPSE]);
 
 const FLUSH_CELLS = 12;
 const FLUSH_MS = 55;
@@ -103,7 +88,6 @@ export class Input {
     this.onHistory = onHistory || (() => {});
     this.strokes = new Map(); // pointerId -> stroke
     this.shapes = new Map(); // pointerId -> in-progress shape
-    this.guides = new Map();
     this.touches = new Map(); // pointerId -> {x,y} live touch points
     this.pinch = null;
     this.pan = null;
@@ -299,10 +283,6 @@ export class Input {
       this.view.markDirty();
       return;
     }
-    if (st.tool === TOOLS.GUIDE) {
-      this.guides.set(pid, { points: [[cell.x, cell.y]] });
-      return;
-    }
     if (DRAG_SHAPES.has(st.tool)) {
       this.shapes.set(pid, { x0: x, y0: y, x1: x, y1: y, tool: st.tool, type });
       this.view.markDirty();
@@ -354,13 +334,6 @@ export class Input {
       return;
     }
 
-    const g = this.guides.get(pid);
-    if (g) {
-      g.points.push([cell.x, cell.y]);
-      this.view.markDirty();
-      return;
-    }
-
     const sh = this.shapes.get(pid);
     if (sh) {
       sh.x1 = Math.round(cell.x);
@@ -389,11 +362,6 @@ export class Input {
     if (sh) {
       this.shapes.delete(pid);
       this._commitShape(sh);
-    }
-    const gd = this.guides.get(pid);
-    if (gd) {
-      this.guides.delete(pid);
-      this._commitGuide(gd);
     }
     if (this.touches.has(pid)) {
       this.touches.delete(pid);
@@ -432,9 +400,7 @@ export class Input {
     const st = this.getState();
     const g = this._grid;
     let base;
-    if (st.tool === TOOLS.SPRAY) {
-      base = inBoundsPairs(g, sprayCells(g, x1, y1, st.brush, st.sprayDensity));
-    } else if (st.brushShape === 'round' && st.brush > 1) {
+    if (st.brushShape === 'round' && st.brush > 1) {
       const pairs = [];
       const seeds = [[x1, y1]];
       if (Math.hypot(x1 - x0, y1 - y0) > 0.5) seeds.push(...shapeCells('line', x0, y0, x1, y1, false));
@@ -570,15 +536,6 @@ export class Input {
     return changed;
   }
 
-  /* ---------- guide lines ---------- */
-
-  _commitGuide(g) {
-    if (g.points.length < 2) return;
-    const lines = [...(this.room.design.guides[this.room.design.active] || []), { points: g.points }];
-    this.room.setGuides(lines);
-    this.view.markDirty();
-  }
-
   /* ---------- outbound pointers ---------- */
 
   _sendPointers() {
@@ -623,7 +580,6 @@ export class Input {
 
   drawPreview(ctx, view) {
     const st = this.getState();
-    this._drawGuides(ctx, view);
     if (this.pinch) return;
 
     for (const sh of this.shapes.values()) {
@@ -699,34 +655,6 @@ export class Input {
     ctx.restore();
   }
 
-  _drawGuides(ctx, view) {
-    const design = this.room.design;
-    const live = this.guides.size > 0;
-    const lines = design.guides[design.active] || [];
-    if (!lines.length && !live) return;
-    ctx.save();
-    ctx.strokeStyle = 'rgba(90,70,40,0.45)';
-    ctx.lineWidth = 1.5;
-    for (const l of lines) {
-      ctx.beginPath();
-      l.points.forEach(([x, y], i) => {
-        const p = view.toScreen(x, y);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      });
-      ctx.stroke();
-    }
-    for (const g of this.guides.values()) {
-      ctx.beginPath();
-      g.points.forEach(([x, y], i) => {
-        const p = view.toScreen(x, y);
-        if (i === 0) ctx.moveTo(p.x, p.y);
-        else ctx.lineTo(p.x, p.y);
-      });
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
 }
 
 /** [x,y] pairs -> flat indices, dropping anything off the board. */

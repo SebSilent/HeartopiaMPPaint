@@ -231,12 +231,19 @@ async function stageBoot(browser, errors) {
 
   const counts = await page.evaluate(() => ({
     groups: document.querySelectorAll('#groups .group').length,
-    tools: document.querySelectorAll('#tools .tool').length,
-    brushes: document.querySelectorAll('#brushes .brush').length,
+    tools: [...document.querySelectorAll('#tools .tool')].map((b) => b.dataset.tool).join(','),
+    brushes: [...document.querySelectorAll('#brushes .brush')].map((b) => b.dataset.brush).join(','),
   }));
   ok('13 colour groups', counts.groups === 13, 'got ' + counts.groups);
-  ok('tools are rendered', counts.tools > 8, 'got ' + counts.tools);
-  ok('brush sizes are rendered', counts.brushes >= 3, 'got ' + counts.brushes);
+  // Named exactly. A bare count went stale the day the toy shapes were cut, and
+  // a tool row that quietly gains or loses a button is worth a failing check.
+  ok(
+    'the tool row is the eight we ship',
+    counts.tools === 'brush,eraser,pick,fill,line,rect,ellipse,polygon',
+    'got ' + counts.tools
+  );
+  // Heartopia's own block ladder (5, 10, 20) plus a single tap and one detail size.
+  ok('brush sizes are the game blocks', counts.brushes === '1,2,5,10,20', 'got ' + counts.brushes);
 
   // The palette shows one group at a time, the way the game's card does, so
   // "125 shades" has to be checked by walking every group and collecting the

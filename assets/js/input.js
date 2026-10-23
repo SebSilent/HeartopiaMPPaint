@@ -38,6 +38,7 @@ import {
   dedupePairs,
 } from './game/shapes.js';
 import { newPatch, patchAdd, sealPatch, finishCapture } from './game/history.js';
+import { stampOffsets } from './game/stamps.js';
 
 export const TOOLS = {
   BRUSH: 'brush',
@@ -400,12 +401,20 @@ export class Input {
     const st = this.getState();
     const g = this._grid;
     let base;
-    if (st.brushShape === 'round' && st.brush > 1) {
+    // An imported tip wins over the square/round switch: it is the more specific
+    // thing the player asked for. Both share the stamping below, because a tip
+    // dragged across the board has to stay continuous exactly like a round brush.
+    const offs = st.stamp && st.brush > 1 ? stampOffsets(st.stamp, st.brush) : null;
+    if (offs || (st.brushShape === 'round' && st.brush > 1)) {
       const pairs = [];
       const seeds = [[x1, y1]];
       if (Math.hypot(x1 - x0, y1 - y0) > 0.5) seeds.push(...shapeCells('line', x0, y0, x1, y1, false));
+      const cells = offs || roundOffsets(st.brush);
       for (const [sx, sy] of seeds) {
-        for (const [dy, dx] of roundOffsets(st.brush)) pairs.push([Math.round(sx) + dx, Math.round(sy) + dy]);
+        // roundOffsets and stampOffsets both hand back [dx, dy]. The destructure
+        // here used to say [dy, dx] and got away with it only because a circle is
+        // symmetric - a tip is not.
+        for (const [dx, dy] of cells) pairs.push([Math.round(sx) + dx, Math.round(sy) + dy]);
       }
       base = inBoundsPairs(g, dedupePairs(pairs));
     } else {

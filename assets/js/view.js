@@ -88,16 +88,26 @@ export class View {
     return rect;
   }
 
-  /** Scale the board so it fits the stage with a little air around it. */
+  /**
+   * Scale the board so it fits the stage with a little air around it.
+   *
+   * `inset` reserves strips along the edges for things that float over the
+   * stage - the zoom control sits bottom-right and, on a phone, was covering
+   * 5.5% of the board. Fitting to the free box instead of the whole stage means
+   * the paintable area is never behind a control you also need to reach.
+   */
   fit() {
     this.measure();
     // The stage has no size while the join gate is up; don't compute a bogus camera.
     if (this.cssW < 8 || this.cssH < 8) return;
     const pad = 24;
-    const s = Math.min((this.cssW - pad) / this.grid.w, (this.cssH - pad) / this.grid.h);
+    const ins = (this.insetBox ? this.insetBox() : this.inset) || { l: 0, t: 0, r: 0, b: 0 };
+    const aw = Math.max(16, this.cssW - pad - ins.l - ins.r);
+    const ah = Math.max(16, this.cssH - pad - ins.t - ins.b);
+    const s = Math.min(aw / this.grid.w, ah / this.grid.h);
     this.scale = clamp(s, 1, 64);
-    this.x = (this.cssW - this.grid.w * this.scale) / 2;
-    this.y = (this.cssH - this.grid.h * this.scale) / 2;
+    this.x = ins.l + (aw - this.grid.w * this.scale) / 2;
+    this.y = ins.t + (ah - this.grid.h * this.scale) / 2;
     this._baseDirty = true;
     this._emitZoom();
   }
@@ -247,16 +257,18 @@ export class View {
       }
       ctx.stroke();
 
-      // every 10th line reads as a guide on the big boards
+      // The game draws its guide lines every 5 cells - that square is the EASY
+      // block, and 10x10 is four of them. Matching it means a board counted here
+      // is counted the same way in game.
       if (this.scale >= 3) {
         ctx.strokeStyle = GRID_LINE_MAJOR;
         ctx.beginPath();
-        for (let i = 0; i <= g.w; i += 10) {
+        for (let i = 0; i <= g.w; i += 5) {
           const x = Math.round(r.x + i * this.scale) + 0.5;
           ctx.moveTo(x, r.y);
           ctx.lineTo(x, r.y + r.h);
         }
-        for (let j = 0; j <= g.h; j += 10) {
+        for (let j = 0; j <= g.h; j += 5) {
           const y = Math.round(r.y + j * this.scale) + 0.5;
           ctx.moveTo(r.x, y);
           ctx.lineTo(r.x + r.w, y);

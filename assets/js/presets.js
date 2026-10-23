@@ -35,7 +35,19 @@ export function isValidRatio(ratio) {
   return RATIOS.includes(ratio);
 }
 
-/** Brush sizes, in cells. 1 cell is exactly one Heartopia paint tap. */
-export const BRUSH_SIZES = [1, 2, 3, 5];
+/**
+ * Brush sizes, in cells.
+ *
+ * 5, 10 and 20 are Heartopia's own block work modes - the reference site's
+ * bundle carries them as `kN=[5,10,20]` with a default of 10, labelled EASY
+ * ("same size as the guide lines in the game"), NORMAL ("four game grid squares,
+ * 2x2") and FAST. 1 is a single paint tap, the atom of the whole thing. 2 is the
+ * one size that is ours: on a 30x18 board a 5-cell brush is a sixth of the
+ * width, and outlines need something between that and a tap.
+ */
+export const BRUSH_SIZES = [1, 2, 5, 10, 20];
+
+/** The game's block modes, for the label under the size picker. */
+export const BLOCK_MODES = { 5: 'guide square', 10: 'normal block', 20: 'fast block' };
 
 export const DEFAULTS = { ratio: '1:1', level: 1 };

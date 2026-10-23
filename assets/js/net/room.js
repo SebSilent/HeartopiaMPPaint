@@ -344,13 +344,6 @@ export class Room extends Emitter {
     this._send({ k: 'blocks', f: faceIdx, flags: flagsB64, seq: this.nextSeq() });
   }
 
-  /** Guide lines: an underlay, not pixels, so they sync as their own small op. */
-  setGuides(lines, faceIdx = this.design.active) {
-    this.design.setGuides(faceIdx, lines);
-    this.emit('guides', { face: faceIdx, lines });
-    this._send({ k: 'guides', f: faceIdx, lines, seq: this.nextSeq() });
-  }
-
   setProfile(patch) {
     let touched = false;
     for (const key of ['nick', 'color', 'device']) {
@@ -417,8 +410,6 @@ export class Room extends Emitter {
       // Older rooms announced a board resize instead of an item change.
       case 'board':
         return this._onBoard(msg, slot);
-      case 'guides':
-        return this._onGuides(msg);
       case 'blocks':
         return this._onBlocks(msg);
       case 'snapshot':
@@ -566,13 +557,6 @@ export class Room extends Emitter {
   _onBoard(msg, slot) {
     if (msg.from === this.me.clientId) return;
     this._onDesign({ from: msg.from, item: itemIdForBoard(msg.ratio, msg.level), seq: msg.seq }, slot);
-  }
-
-  _onGuides(msg) {
-    if (msg.from === this.me.clientId) return;
-    const face = clampFace(msg.f, this.design.faces.length);
-    this.design.setGuides(face, Array.isArray(msg.lines) ? msg.lines : []);
-    this.emit('guides', { face, lines: this.design.guides[face] });
   }
 
   _onBlocks(msg) {

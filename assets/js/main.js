@@ -59,7 +59,6 @@ const state = {
   brush: 1,
   brushSizes: BRUSH_SIZES,
   brushShape: 'square',
-  sprayDensity: 0.45,
   shapeFilled: false,
   fillGlobal: false,
   fillTolerance: 0,
@@ -101,9 +100,6 @@ const actions = {
   setBrushShape: (s) => {
     state.brushShape = s;
     ui.setTool(state.tool);
-  },
-  setSprayDensity: (v) => {
-    state.sprayDensity = clamp(v, 0.05, 1);
   },
   setShapeFilled: (v) => {
     state.shapeFilled = !!v;
@@ -260,6 +256,9 @@ function mount(room) {
     fx: document.getElementById('fx'),
     grid: room.grid,
   });
+  // Controls that float permanently over the stage get their space reserved, so
+  // the board is never drawn underneath something you have to tap.
+  view.insetBox = stageInset;
   cursors = new Cursors({ room });
   blueprint = new Blueprint(room);
   view.overlay = blueprint;
@@ -769,6 +768,43 @@ function bindOrbit(cv) {
 
 /* ---------------- layout ---------------- */
 
+/**
+ * How much of the stage edge is already spoken for by a floating control.
+ *
+ * The zoom bar sits bottom-right over the board. Measured across six device
+ * sizes it covered 1.4% of the board on a 1024x768 tablet and 5.5% on a phone -
+ * cells that were visible but unreachable, because the bar eats the tap first.
+ * Panels the user opens deliberately (trace, import, 3D) are not reserved:
+ * they are temporary, and reserving them would shrink the board for no one's
+ * benefit.
+ */
+function stageInset() {
+  const ins = { l: 0, t: 0, r: 0, b: 0 };
+  if (!view || !view.base) return ins;
+  const box = view.base.getBoundingClientRect();
+  for (const sel of ['.zoom', '.help']) {
+    const el = document.querySelector(sel);
+    if (!el || el.hidden) continue;
+    const b = el.getBoundingClientRect();
+    if (b.width < 1 || b.height < 1) continue;
+    if (b.right <= box.left || b.left >= box.right) continue;
+    if (b.bottom <= box.top || b.top >= box.bottom) continue;
+    // One side only, the cheapest: pushing the board clear of an edge is
+    // enough to miss an object sitting on that edge, and reserving two sides
+    // for a corner control cost 9% of the board for nothing. A bar in the
+    // bottom-right costs its 44px of height, not a 150px slice of width.
+    const cands = [
+      ['l', b.right - box.left],
+      ['r', box.right - b.left],
+      ['t', b.bottom - box.top],
+      ['b', box.bottom - b.top],
+    ];
+    cands.sort((a, c) => a[1] - c[1]);
+    ins[cands[0][0]] = Math.max(ins[cands[0][0]], cands[0][1]);
+  }
+  return ins;
+}
+
 function layout() {
   if (!view) return;
   view.measure();
@@ -929,16 +965,11 @@ const KEY_TOOLS = {
   e: TOOLS.ERASER,
   i: TOOLS.PICK,
   f: TOOLS.FILL,
-  j: TOOLS.SPRAY,
+
   l: TOOLS.LINE,
   r: TOOLS.RECT,
   o: TOOLS.ELLIPSE,
-  t: TOOLS.TRIANGLE,
-  s: TOOLS.STAR,
-  h: TOOLS.HEART,
-  a: TOOLS.ARROW,
   p: TOOLS.POLYGON,
-  d: TOOLS.GUIDE,
 };
 
 function bindKeys() {

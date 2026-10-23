@@ -31,7 +31,7 @@ Pick a nickname, get a room code, send it to people. Everyone paints at once, li
 
 ## Keys
 
-`B` brush · `E` eraser · `I` eyedropper · `G` grid · `[` `]` brush size
-`+` `−` zoom · `0` fit · `Space`-drag pan · `Ctrl+S` export
+`B` brush · `E` eraser · `I` eyedropper · `F` bucket · `L` line · `R` rectangle · `O` ellipse · `P` polygon
+`G` grid · `[` `]` brush size · `+` `−` zoom · `0` fit · `Space`-drag pan · `Ctrl+S` export
 
 `?local=1` opens a board that never touches the network.

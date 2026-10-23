@@ -88,7 +88,6 @@ export class Design {
     this.item = item;
     this.faces = item.faces.map((f) => new Grid(f.w, f.h));
     this.active = 0;
-    this.guides = item.faces.map(() => []);
     this.version++;
   }
 
@@ -233,10 +232,4 @@ export class Design {
     return true;
   }
 
-  /* ---------- guide lines (not pixels: an underlay you draw over) ---------- */
-
-  setGuides(faceIdx, lines) {
-    this.guides[faceIdx] = lines;
-    this.version++;
-  }
 }

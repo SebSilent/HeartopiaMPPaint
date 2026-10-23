@@ -148,7 +148,9 @@ export class Preview3D {
       const ua = [m.uv[ia * 2] * face.w, (1 - m.uv[ia * 2 + 1]) * face.h];
       const ub = [m.uv[ib * 2] * face.w, (1 - m.uv[ib * 2 + 1]) * face.h];
       const uc = [m.uv[ic * 2] * face.w, (1 - m.uv[ic * 2 + 1]) * face.h];
-      const tri = { a, b, c, u: ua, v: ub, w2: uc, tex, lit, loop: null, face: face.id, a2: a[2], b2: b[2], c2: c[2], n };
+      // `two` marks a triangle that must be drawn from both sides: see the cull
+      // note in draw() for why a cloth shell needs that.
+      const tri = { a, b, c, u: ua, v: ub, w2: uc, tex, lit, loop: null, face: face.id, a2: a[2], b2: b[2], c2: c[2], n, two: true };
       tris.push(tri);
     }
     this.radius = Math.max(1, m.half * S);
@@ -321,13 +323,18 @@ export class Preview3D {
     ) * dist * this.zoom;
     const view = [];
     for (const t of this._tris) {
-      // A real garment is a closed surface, so half of it faces away and every
-      // one of those triangles would be painted over by the half in front of it.
-      // Panels are single sheets and must keep drawing both sides.
-      if (t.n) {
-        const nr = orient(t.n, this.yaw, this.pitch, 0);
-        if (nr[2] <= 0) continue;
-      }
+      // There is no back-face culling here, deliberately. It used to skip any
+      // triangle pointing away from the camera, on the assumption that a garment
+      // is a closed solid and half of it is wasted work. It is not closed: the
+      // mesh art-pia ships is a single cloth shell, because the lining is a
+      // separate group that baking drops - so the away-facing half was the only
+      // thing covering the neck, cuffs and hem, and culling it turned every
+      // opening into a window onto the backdrop. That is what "holes" was.
+      //
+      // Everything is drawn and the painter sort below decides what wins, which
+      // is the correct answer for a shell. Lighting already used abs(dot), so an
+      // inside face is shaded rather than black. The cost is roughly twice the
+      // triangles per frame, measured in tools/perf.mjs.
       const p = this._project(t.a, dist, focal, w, h, ext);
       if (!p) continue;
       const q = this._project(t.b, dist, focal, w, h, ext);
@@ -346,7 +353,9 @@ export class Preview3D {
     for (const v of view) {
       const loop = v.t.loop;
       if (!loop) {
-        drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.t.lit);
+        // Mesh triangles bleed into their neighbours to hide the seam cracks;
+        // panels are clipped to the face outline and must not cross it.
+        drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.t.lit, v.t.two);
         continue;
       }
       let pts = clips.get(loop);
@@ -441,9 +450,28 @@ function tri(tris, a, b, c, u, v, w2, tex, lit, loop, faceId) {
 
 /* ---------------- triangle rasteriser ---------------- */
 
-function drawTri(ctx, p, q, r, u, v, w2, tex, lit) {
+function drawTri(ctx, p, q, r, u, v, w2, tex, lit, bleed) {
   if (!tex) return;
-  if (Math.abs((q[0] - p[0]) * (r[1] - p[1]) - (r[0] - p[0]) * (q[1] - p[1])) < 0.02) return;
+  // A triangle with no area cannot be mapped, but the threshold has to be near
+  // nothing: at a steep orbit a whole band of the sleeve projects to slivers of a
+  // hundredth of a pixel, and skipping them punched the holes the old counts
+  // showed growing with angle. Only truly degenerate ones are dropped.
+  const area = (q[0] - p[0]) * (r[1] - p[1]) - (r[0] - p[0]) * (q[1] - p[1]);
+  if (Math.abs(area) < 1e-4) return;
+  if (bleed) {
+    // Neighbouring triangles share an exact edge, and two independently clipped
+    // fills leave a hairline of backdrop along it. Push each vertex a third of a
+    // pixel away from the centroid so neighbours overlap and the seam is covered.
+    // The affine mapping below is left alone, so this stretches the texture by
+    // well under a pixel - invisible, and the only way to hide the crack.
+    const cx = (p[0] + q[0] + r[0]) / 3;
+    const cy = (p[1] + q[1] + r[1]) / 3;
+    const rad = (Math.hypot(p[0] - cx, p[1] - cy) + Math.hypot(q[0] - cx, q[1] - cy) + Math.hypot(r[0] - cx, r[1] - cy)) / 3;
+    const k = 1 + 0.34 / Math.max(rad, 0.34);
+    p = [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k];
+    q = [cx + (q[0] - cx) * k, cy + (q[1] - cy) * k];
+    r = [cx + (r[0] - cx) * k, cy + (r[1] - cy) * k];
+  }
   const du1 = v[0] - u[0];
   const dv1 = v[1] - u[1];
   const du2 = w2[0] - u[0];

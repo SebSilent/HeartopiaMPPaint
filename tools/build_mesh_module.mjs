@@ -117,13 +117,42 @@ function triangles(mesh, meshId, item) {
 }
 
 /**
- * Weld on a position grid, per face.
+ * Weld on a position grid, per face, onto a position shared across faces.
  *
  * The grid is what makes 220,000 triangles affordable. Clusters are keyed by
  * face as well as by position, because two panels meeting at a seam want the
- * same point in space but different pixels of the paint.
+ * same point in space but different pixels of the paint - so they stay separate
+ * vertices. They must however land on the *same* point, and keying the cluster
+ * by face alone meant each face averaged its own members and drifted apart by
+ * up to a cell: a hairline gap down every seam, and through it the background.
+ *
+ * So the position is resolved in two passes. Pass one buckets by quantised
+ * position with no face in the key and averages, giving one canonical point per
+ * grid cell. Pass two still clusters per face - for UV and normal - but writes
+ * the canonical point out. Seams then meet exactly, and texturing is unchanged.
  */
 function decimateRun(mesh, tris, cell) {
+  const q = (x, y, z) => `${Math.round(x / cell)}|${Math.round(y / cell)}|${Math.round(z / cell)}`;
+
+  // Pass one: the canonical position of every grid cell, across all faces.
+  const buckets = new Map();
+  for (const t of tris) {
+    for (let k = 0; k < 3; k++) {
+      const vi = t.v[k];
+      const x = mesh.pos[vi * 3];
+      const y = mesh.pos[vi * 3 + 1];
+      const z = mesh.pos[vi * 3 + 2];
+      const key = q(x, y, z);
+      let b = buckets.get(key);
+      if (!b) buckets.set(key, (b = { x: 0, y: 0, z: 0, n: 0 }));
+      b.x += x;
+      b.y += y;
+      b.z += z;
+      b.n++;
+    }
+  }
+
+  // Pass two: cluster per face, emit the canonical position.
   const kept = [];
   const idxs = [];
   const map = new Map();
@@ -134,15 +163,18 @@ function decimateRun(mesh, tris, cell) {
       const x = mesh.pos[vi * 3];
       const y = mesh.pos[vi * 3 + 1];
       const z = mesh.pos[vi * 3 + 2];
-      const key = `${t.face}|${Math.round(x / cell)}|${Math.round(y / cell)}|${Math.round(z / cell)}`;
-      let id = map.get(key);
+      const key = q(x, y, z);
+      const ck = `${t.face}|${key}`;
+      let id = map.get(ck);
       if (id === undefined) {
         id = kept.length;
-        map.set(key, id);
+        map.set(ck, id);
+        const b = buckets.get(key);
         kept.push({
-          x,
-          y,
-          z,
+          x: b.x / b.n,
+          y: b.y / b.n,
+          z: b.z / b.n,
+          f: t.face,
           nx: mesh.nrm[vi * 3],
           ny: mesh.nrm[vi * 3 + 1],
           nz: mesh.nrm[vi * 3 + 2],
@@ -158,11 +190,176 @@ function decimateRun(mesh, tris, cell) {
   return { kept, idxs };
 }
 
+/**
+ * Stitch the seams the grid left open.
+ *
+ * Welding onto a grid only merges vertices that round to the same cell. Two
+ * panels meeting at a seam routinely have their partners a little over half a
+ * cell apart, so they land in different cells and stay that far apart - and a
+ * gap of one cell on a garment a hundred cells wide is a four pixel slit down
+ * the side of the rendered shirt, which is exactly what the render map showed:
+ * trapped backdrop in a vertical line, not scattered.
+ *
+ * So find the vertices on the surface's open edge - the only places a seam can
+ * be - and pair each with the nearest open-edge vertex belonging to a different
+ * face, within a tolerance. Each pair is then moved to its midpoint, so neither
+ * panel is favoured. Genuine openings (neck, cuffs, hem) have no partner to find
+ * and stay open, which is correct: a t-shirt is not a sealed volume.
+ */
+function stitchSeams(kept, idxs, tol) {
+  // Which vertices sit on an open edge: an edge used by one triangle only.
+  const count = new Map();
+  const at = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
+  for (let t = 0; t < idxs.length; t += 4) {
+    const tri = [idxs[t], idxs[t + 1], idxs[t + 2]];
+    for (let k = 0; k < 3; k++) {
+      const e = at(tri[k], tri[(k + 1) % 3]);
+      count.set(e, (count.get(e) || 0) + 1);
+    }
+  }
+  const edgeVerts = new Set();
+  for (const [e, n] of count) {
+    if (n !== 1) continue;
+    const [a, b] = e.split('|').map(Number);
+    edgeVerts.add(a);
+    edgeVerts.add(b);
+  }
+  if (!edgeVerts.size) return 0;
+
+  // Spatial hash of the other faces' edge vertices, so this is not O(n^2).
+  const hash = new Map();
+  const hkey = (x, y, z) => `${Math.floor(x / tol)}|${Math.floor(y / tol)}|${Math.floor(z / tol)}`;
+  for (const i of edgeVerts) {
+    const v = kept[i];
+    for (let dx = -1; dx <= 1; dx++)
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dz = -1; dz <= 1; dz++) {
+          const k = `${Math.floor(v.x / tol) + dx}|${Math.floor(v.y / tol) + dy}|${Math.floor(v.z / tol) + dz}`;
+          const list = hash.get(k);
+          if (list) list.push(i);
+          else hash.set(k, [i]);
+        }
+  }
+
+  let stitched = 0;
+  const done = new Set();
+  for (const i of edgeVerts) {
+    if (done.has(i)) continue;
+    const v = kept[i];
+    let best = -1;
+    let bestD = tol;
+    for (const j of hash.get(hkey(v.x, v.y, v.z)) || []) {
+      if (j === i || done.has(j) || kept[j].f === v.f) continue;
+      const d = Math.hypot(kept[j].x - v.x, kept[j].y - v.y, kept[j].z - v.z);
+      if (d < bestD) {
+        bestD = d;
+        best = j;
+      }
+    }
+    if (best < 0) continue;
+    const w = kept[best];
+    const mx = (v.x + w.x) / 2;
+    const my = (v.y + w.y) / 2;
+    const mz = (v.z + w.z) / 2;
+    v.x = w.x = mx;
+    v.y = w.y = my;
+    v.z = w.z = mz;
+    done.add(i);
+    done.add(best);
+    stitched++;
+  }
+  return stitched;
+}
+
+/**
+ * Relax the welded mesh, once.
+ *
+ * Cluster decimation snaps to a grid, and a grid shows: on a curved silhouette
+ * the steps catch the light as facets, and the user's word for it was "not
+ * smooth". Each vertex moves halfway to the mean of the vertices it shares a
+ * triangle with. Neighbours are found on the canonical position, so a seam
+ * moves as one point and stays closed.
+ *
+ * One pass, and only the positions. Normals are then rebuilt from the new
+ * geometry rather than kept, because keeping them would shade a surface that is
+ * no longer there.
+ */
+function relax(kept, idxs) {
+  const cell = 1e-5;
+  const key = (x, y, z) => `${Math.round(x / cell)}|${Math.round(y / cell)}|${Math.round(z / cell)}`;
+  // Vertices that share a canonical point are topologically one vertex.
+  const byPos = new Map();
+  for (let i = 0; i < kept.length; i++) {
+    const k = key(kept[i].x, kept[i].y, kept[i].z);
+    const list = byPos.get(k);
+    if (list) list.push(i);
+    else byPos.set(k, [i]);
+  }
+  const adj = kept.map(() => new Set());
+  for (let t = 0; t < idxs.length; t += 4) {
+    const tri = [idxs[t], idxs[t + 1], idxs[t + 2]];
+    for (const a of tri)
+      for (const b of tri) if (a !== b) for (const bn of byPos.get(key(kept[b].x, kept[b].y, kept[b].z)) || []) adj[a].add(bn);
+  }
+  const src = kept.map((v) => [v.x, v.y, v.z]);
+  for (let i = 0; i < kept.length; i++) {
+    const nb = adj[i];
+    if (!nb.size) continue;
+    let x = 0;
+    let y = 0;
+    let z = 0;
+    for (const j of nb) {
+      x += src[j][0];
+      y += src[j][1];
+      z += src[j][2];
+    }
+    const n = nb.size;
+    kept[i].x = src[i][0] + 0.5 * (x / n - src[i][0]);
+    kept[i].y = src[i][1] + 0.5 * (y / n - src[i][1]);
+    kept[i].z = src[i][2] + 0.5 * (z / n - src[i][2]);
+  }
+
+  // Rebuild smooth vertex normals from the relaxed triangles, area-weighted.
+  for (const v of kept) {
+    v.nx = 0;
+    v.ny = 0;
+    v.nz = 0;
+  }
+  for (let t = 0; t < idxs.length; t += 4) {
+    const [ia, ib, ic] = [idxs[t], idxs[t + 1], idxs[t + 2]];
+    const a = kept[ia];
+    const b = kept[ib];
+    const c = kept[ic];
+    const ux = b.x - a.x;
+    const uy = b.y - a.y;
+    const uz = b.z - a.z;
+    const vx = c.x - a.x;
+    const vy = c.y - a.y;
+    const vz = c.z - a.z;
+    // Cross product magnitude is twice the area, which is the weight wanted.
+    const nx = uy * vz - uz * vy;
+    const ny = uz * vx - ux * vz;
+    const nz = ux * vy - uy * vx;
+    for (const v of [a, b, c]) {
+      v.nx += nx;
+      v.ny += ny;
+      v.nz += nz;
+    }
+  }
+  for (const v of kept) {
+    const l = Math.hypot(v.nx, v.ny, v.nz) || 1;
+    v.nx /= l;
+    v.ny /= l;
+    v.nz /= l;
+  }
+}
+
 /** Find the weld grid that lands nearest the target triangle count. */
 function fit(mesh, tris) {
   let lo = 0.002;
   let hi = 0.2;
   let best = null;
+  let bestCell = hi;
   for (let i = 0; i < 22; i++) {
     const cell = (lo + hi) / 2;
     const r = decimateRun(mesh, tris, cell);
@@ -170,11 +367,19 @@ function fit(mesh, tris) {
     if (n > TARGET) lo = cell;
     else {
       best = r;
+      bestCell = cell;
       hi = cell;
     }
     if (Math.abs(hi - lo) / hi < 0.01) break;
   }
-  return best || decimateRun(mesh, tris, hi);
+  if (!best) {
+    best = decimateRun(mesh, tris, hi);
+    bestCell = hi;
+  }
+  // Seam partners can be up to a cell apart and still be the same point, so the
+  // stitching tolerance has to be a little over the cell that made the mesh.
+  best.cell = bestCell;
+  return best;
 }
 
 mkdirSync('assets/js/data/mesh', { recursive: true });
@@ -188,9 +393,39 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.bin') && f.includ
     continue;
   }
   const tris = triangles(mesh, meshId, item);
-  const { kept, idxs } = fit(mesh, tris);
+  const fitted = fit(mesh, tris);
+  const { kept, idxs } = fitted;
+  // Tolerance comes from the cell that made the mesh. It was also tried at a
+  // flat 0.045, which tools/seamcheck.mjs suggested would catch 40 more pairs -
+  // it caught none of them and the render measured identically, because those
+  // candidates are the far side of the garment rather than a seam.
+  const stitched = stitchSeams(kept, idxs, fitted.cell * 1.6);
+  relax(kept, idxs);
   const V = kept.length;
   const T = idxs.length / 4;
+
+  // How open the surface is, counted on the welded result. An edge belonging to
+  // one triangle only is a boundary; a garment legitimately has some (neck,
+  // cuffs, hem are openings) but a seam that failed to weld looks identical, and
+  // it is through those that the background shows.
+  const edge = new Map();
+  for (let t = 0; t < idxs.length; t += 4) {
+    const tri = [idxs[t], idxs[t + 1], idxs[t + 2]];
+    for (let k = 0; k < 3; k++) {
+      const a = Math.min(tri[k], tri[(k + 1) % 3]);
+      const b = Math.max(tri[k], tri[(k + 1) % 3]);
+      const key = `${a}-${b}`;
+      edge.set(key, (edge.get(key) || 0) + 1);
+    }
+  }
+  let openEdges = 0;
+  for (const n of edge.values()) if (n === 1) openEdges++;
+  const openPct = ((openEdges / edge.size) * 100).toFixed(1);
+  // Grid welding cannot be perfect: two seam vertices half a cell apart can
+  // round to different cells and stay that far apart. What matters is whether
+  // that shows, so the real test is made in the renderer, not here - see
+  // tools/meshholes.mjs, which counts background pixels trapped inside the
+  // garment silhouette at several orbit angles.
 
   let x0 = Infinity;
   let x1 = -Infinity;
@@ -265,7 +500,9 @@ for (const file of readdirSync(dir).filter((f) => f.endsWith('.bin') && f.includ
         faces,
       })};\n`
   );
-  report.push(`${item.padEnd(11)} tris ${String(T).padStart(5)} verts ${String(V).padStart(5)} bytes ${b64.length}`);
+  report.push(
+    `${item.padEnd(11)} tris ${String(T).padStart(5)} verts ${String(V).padStart(5)} bytes ${String(b64.length).padStart(6)} open ${openPct}% stitched ${stitched}`
+  );
 }
 console.log(report.join('\n'));
 if (warn.length) console.log('\nWARNINGS\n' + warn.join('\n'));

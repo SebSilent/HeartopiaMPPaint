@@ -28,6 +28,11 @@ const mkCanvas = () => {
     clip() {},
     fill() {},
     drawImage() {},
+    // The mesh overlay interpolates its shade across large triangles, so a
+    // gradient is now part of what a frame asks the canvas for.
+    createLinearGradient() {
+      return { addColorStop() {} };
+    },
   };
   return { width: 0, height: 0, getContext: () => ctx, getBoundingClientRect: () => ({ width: 400, height: 300 }) };
 };

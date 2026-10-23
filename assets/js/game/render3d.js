@@ -92,6 +92,7 @@ export class Preview3D {
     this.radius = 1;
     this._tris = [];
     this._cache = new Map();
+    this._dirty = true;
   }
 
   /**
@@ -99,7 +100,65 @@ export class Preview3D {
    * @param {{id:string,faces:Array}} item
    * @returns {number} triangles
    */
+  /**
+   * Use a real garment mesh for the next build. Pass null to go back to the
+   * flat panel schematic, which is all furniture and the book have.
+   * @param {{pos:Float32Array,nrm:Float32Array,uv:Float32Array,idx:Uint16Array,faces:string[],tris:number}|null} mesh
+   */
+  setMesh(mesh) {
+    this.mesh = mesh;
+    this._cache.clear();
+    this._dirty = true;
+  }
+
+  /**
+   * The garment as art-pia's fabric simulation made it: about 1,400 triangles,
+   * each already carrying the face it samples and the mesh's own normal.
+   *
+   * Nothing is subdivided here, unlike the panels. The affine texture error is
+   * proportional to triangle size and these are already small, which is the
+   * whole reason the real mesh is worth shipping.
+   */
+  _buildMesh(item) {
+    const m = this.mesh;
+    const tris = [];
+    // Mesh units are roughly one unit across a body; the rest of this renderer
+    // counts in paint cells, and the camera's near limit is written in them.
+    const S = 100;
+    for (let t = 0; t < m.tris; t++) {
+      const ia = m.idx[t * 4];
+      const ib = m.idx[t * 4 + 1];
+      const ic = m.idx[t * 4 + 2];
+      const faceId = m.faces[m.idx[t * 4 + 3]];
+      const face = item.faces.find((f) => f.id === faceId) || item.faces[0];
+      if (!face) continue;
+      const a = [m.pos[ia * 3] * S, m.pos[ia * 3 + 1] * S, m.pos[ia * 3 + 2] * S];
+      const b = [m.pos[ib * 3] * S, m.pos[ib * 3 + 1] * S, m.pos[ib * 3 + 2] * S];
+      const c = [m.pos[ic * 3] * S, m.pos[ic * 3 + 1] * S, m.pos[ic * 3 + 2] * S];
+      const n = [
+        (m.nrm[ia * 3] + m.nrm[ib * 3] + m.nrm[ic * 3]) / 3,
+        (m.nrm[ia * 3 + 1] + m.nrm[ib * 3 + 1] + m.nrm[ic * 3 + 1]) / 3,
+        (m.nrm[ia * 3 + 2] + m.nrm[ib * 3 + 2] + m.nrm[ic * 3 + 2]) / 3,
+      ];
+      const tex = this._texFor(face);
+      const facing = Math.abs(dot3(norm3(n), LIGHT));
+      const lit = 0.66 + 0.34 * facing;
+      // The mesh's UV is u = x/w and v = 1 - y/h in cells, so the texture row
+      // is (1 - v) * h: the paint grid counts down from the top of the face.
+      const ua = [m.uv[ia * 2] * face.w, (1 - m.uv[ia * 2 + 1]) * face.h];
+      const ub = [m.uv[ib * 2] * face.w, (1 - m.uv[ib * 2 + 1]) * face.h];
+      const uc = [m.uv[ic * 2] * face.w, (1 - m.uv[ic * 2 + 1]) * face.h];
+      const tri = { a, b, c, u: ua, v: ub, w2: uc, tex, lit, loop: null, face: face.id, a2: a[2], b2: b[2], c2: c[2], n };
+      tris.push(tri);
+    }
+    this.radius = Math.max(1, m.half * S);
+    this._tris = tris;
+    this._dirty = true;
+    return tris.length;
+  }
+
   build(item) {
+    if (this.mesh) return this._buildMesh(item);
     const panels = panelsFor(item.id) || fallbackPanels(item.faces);
     const tris = [];
     let radius = 1;
@@ -140,16 +199,20 @@ export class Preview3D {
           const v1 = (iy + 1) / n;
           // The face id travels with the triangle so the texture can be re-baked
           // in place when the paint changes.
+          // v is measured up the panel from its bottom edge, and the paint grid
+          // counts rows down from the top of the face, so the row is (1 - v) * h.
+          const ty = (vv) => (1 - vv) * face.h;
           tri(tris, bilerp(corners, u0, v0), bilerp(corners, u1, v0), bilerp(corners, u1, v1),
-            [u0 * face.w, v0 * face.h], [u1 * face.w, v0 * face.h], [u1 * face.w, v1 * face.h], tex, lit, loop, face.id);
+            [u0 * face.w, ty(v0)], [u1 * face.w, ty(v0)], [u1 * face.w, ty(v1)], tex, lit, loop, face.id);
           tri(tris, bilerp(corners, u0, v0), bilerp(corners, u1, v1), bilerp(corners, u0, v1),
-            [u0 * face.w, v0 * face.h], [u1 * face.w, v1 * face.h], [u0 * face.w, v1 * face.h], tex, lit, loop, face.id);
+            [u0 * face.w, ty(v0)], [u1 * face.w, ty(v1)], [u0 * face.w, ty(v1)], tex, lit, loop, face.id);
         }
       }
       for (const v of corners) radius = Math.max(radius, Math.hypot(v[0], v[1], v[2]));
     }
     this.radius = radius;
     this._tris = tris;
+    this._dirty = true;
     return tris.length;
   }
 
@@ -177,6 +240,7 @@ export class Preview3D {
   /** Forget the baked textures so the next build pulls fresh ones. */
   invalidate() {
     this._cache.clear();
+    this._dirty = true;
   }
 
   /**
@@ -194,9 +258,23 @@ export class Preview3D {
       const tex = this._cache.get(t.face);
       if (tex) t.tex = tex;
     }
+    this._dirty = true;
   }
 
-  render() {
+  /**
+   * Repaint, but only when something actually moved.
+   *
+   * A garment is a thousand-odd textured triangles and costs about 14 ms, so a
+   * loop that repaints an unchanged view throws away the frame budget on every
+   * idle tick. Anything that can change the picture marks it dirty instead.
+   */
+  markDirty() {
+    this._dirty = true;
+  }
+
+  render(force) {
+    if (!force && !this._dirty) return;
+    this._dirty = false;
     const cv = this.canvas;
     const ctx = this.ctx;
     const dpr = Math.min(3, window.devicePixelRatio || 1);
@@ -243,6 +321,13 @@ export class Preview3D {
     ) * dist * this.zoom;
     const view = [];
     for (const t of this._tris) {
+      // A real garment is a closed surface, so half of it faces away and every
+      // one of those triangles would be painted over by the half in front of it.
+      // Panels are single sheets and must keep drawing both sides.
+      if (t.n) {
+        const nr = orient(t.n, this.yaw, this.pitch, 0);
+        if (nr[2] <= 0) continue;
+      }
       const p = this._project(t.a, dist, focal, w, h, ext);
       if (!p) continue;
       const q = this._project(t.b, dist, focal, w, h, ext);
@@ -334,16 +419,19 @@ export class Preview3D {
   orbit(dx, dy) {
     this.yaw += dx * 0.45;
     this.pitch = Math.max(-85, Math.min(85, this.pitch - dy * 0.45));
+    this._dirty = true;
   }
 
   setZoom(z) {
     this.zoom = Math.max(0.3, Math.min(3.5, z));
+    this._dirty = true;
   }
 
   reset() {
     this.yaw = -24;
     this.pitch = 14;
     this.zoom = 1;
+    this._dirty = true;
   }
 }
 

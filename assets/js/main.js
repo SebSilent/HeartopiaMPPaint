@@ -20,6 +20,7 @@ import { makeRoomCode, normalizeRoomCode, detectDevice, clamp } from './util.js'
 import { History, patchWrite } from './game/history.js';
 import { Blueprint } from './ui/blueprint.js';
 import { Preview3D } from './game/render3d.js';
+import { loadMesh } from './game/meshdata.js';
 import { findItem, itemIdForBoard, cellTotal } from './game/slots.js';
 import { outlineFor } from './game/outline.js';
 import { faceInfo, paintable } from './game/faces.js';
@@ -713,10 +714,34 @@ function faceTexture(faceId) {
   return c;
 }
 
+/**
+ * The garment's real shape, fetched once per item.
+ *
+ * Furniture and the book have no mesh to fetch, so they keep the flat panel
+ * schematic. A garment's mesh arrives a moment after the first frame, which is
+ * why the panel shows the schematic immediately and swaps rather than blocking.
+ */
+let meshItem = null;
+// undefined: still in flight. null: this item has no mesh. object: use it.
+let meshLoaded;
+
 function rebuild3d() {
   if (!preview3d || !room) return;
+  const item = room.design.item;
   preview3d.invalidate();
-  preview3d.build(room.design.item);
+  if (meshItem !== item.id) {
+    meshItem = item.id;
+    meshLoaded = undefined;
+    loadMesh(item.id).then((mesh) => {
+      // The design moved on while this was in flight.
+      if (!preview3d || meshItem !== item.id) return;
+      meshLoaded = mesh || null;
+      preview3d.setMesh(meshLoaded);
+      preview3d.build(room.design.item);
+    });
+  }
+  preview3d.setMesh(meshLoaded || null);
+  preview3d.build(item);
 }
 
 function bindOrbit(cv) {
@@ -753,6 +778,9 @@ function layout() {
   // toasts clear of it instead of guessing in CSS.
   const dock = document.getElementById('dock');
   if (dock) document.documentElement.style.setProperty('--dock-h', `${Math.round(dock.getBoundingClientRect().height)}px`);
+  // The 3D panel is only repainted when something changed, so a resize has to
+  // say so or the garment keeps the size it had before the panel moved.
+  if (preview3d) preview3d.markDirty();
 }
 
 let resizeTimer = null;

@@ -18,7 +18,7 @@ Pick a nickname, get a room code, send it to people. Everyone paints at once, li
 - **PNG export at the board's exact pixel size**, ready to copy into the game
 - **The game's own items**, clothing, furniture and the book, on their real faces at their real sizes
 - **Game silhouettes enforced**, the cells Heartopia refuses to paint stay unpaintable for everyone in the room
-- **A 3D preview of what you are painting**, orbit by drag, zoom by wheel, repainted on every stroke
+- **The garment's own 3D shape**, the fabric mesh the game wears, orbit by drag, zoom by wheel, repainted on every stroke
 - **Phone, tablet, desktop. Nothing to install.**
 
 | Ratio | S | M | L | XL |

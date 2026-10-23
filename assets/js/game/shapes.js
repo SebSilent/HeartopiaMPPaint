@@ -67,7 +67,6 @@ export function ellipseCells(x0, y0, x1, y1, filled) {
   const rx = Math.abs(x1 - x0) / 2;
   const ry = Math.abs(y1 - y0) / 2;
   if (rx < 0.5 && ry < 0.5) return [[Math.round(x0), Math.round(y0)]];
-  const out = [];
   const X0 = Math.floor(Math.min(x0, x1));
   const X1 = Math.ceil(Math.max(x0, x1));
   const Y0 = Math.floor(Math.min(y0, y1));
@@ -75,12 +74,32 @@ export function ellipseCells(x0, y0, x1, y1, filled) {
   const inside = (x, y) => {
     const nx = rx > 0 ? (x - cx) / rx : 0;
     const ny = ry > 0 ? (y - cy) / ry : 0;
-    return nx * nx + ny * ny <= 1.02;
+    return nx * nx + ny * ny <= 1;
   };
-  if (filled) {
-    for (let y = Y0; y <= Y1; y++) for (let x = X0; x <= X1; x++) if (inside(x, y)) out.push([x, y]);
-    return out;
+  // The rim, as a closed ring.
+  //
+  // Taking the first and last cell of each scan row - the obvious trick - only
+  // ever finds the left and right extremes, so the top and bottom of the
+  // circle are simply missing and the outline reads as two parentheses. Walk
+  // the curve instead and join consecutive samples with a line: Bresenham
+  // cannot skip a cell between two samples that close, and the samples are
+  // placed so that they never are.
+  const steps = Math.max(24, Math.ceil(Math.PI * (rx + ry) * 2));
+  const rim = [];
+  let prev = null;
+  for (let i = 0; i <= steps; i++) {
+    const a = (i / steps) * Math.PI * 2;
+    const px = Math.round(cx + Math.cos(a) * rx);
+    const py = Math.round(cy + Math.sin(a) * ry);
+    if (prev) rim.push(...lineCells(prev[0], prev[1], px, py));
+    prev = [px, py];
   }
+  if (!filled) return dedupePairs(rim);
+  // The fill is the ring plus everything between its edges, so a filled
+  // ellipse always contains the outline it would have drawn. Testing each cell
+  // against the curve instead cannot: the ring is rounded to whole cells and
+  // leans a little outside the true ellipse where it does.
+  const out = [...rim];
   for (let y = Y0; y <= Y1; y++) {
     let first = -1;
     let last = -1;
@@ -89,9 +108,7 @@ export function ellipseCells(x0, y0, x1, y1, filled) {
       if (first < 0) first = x;
       last = x;
     }
-    if (first < 0) continue;
-    out.push([first, y]);
-    if (last !== first) out.push([last, y]);
+    for (let x = first; x <= last; x++) out.push([x, y]);
   }
   return dedupePairs(out);
 }
@@ -127,55 +144,6 @@ export function polygonCells(points, filled = true) {
     }
   }
   return out;
-}
-
-/** Star and heart are polygons on a unit circle, scaled to the drag box. */
-export function starCells(x0, y0, x1, y1, points = 5) {
-  const cx = (x0 + x1) / 2;
-  const cy = (y0 + y1) / 2;
-  const rx = Math.abs(x1 - x0) / 2;
-  const ry = Math.abs(y1 - y0) / 2;
-  const poly = [];
-  for (let i = 0; i < points * 2; i++) {
-    const a = (Math.PI * i) / points - Math.PI / 2;
-    const k = i % 2 ? 0.42 : 1;
-    poly.push([Math.round(cx + Math.cos(a) * rx * k), Math.round(cy + Math.sin(a) * ry * k)]);
-  }
-  return polygonCells(poly, true);
-}
-
-export function heartCells(x0, y0, x1, y1) {
-  const w = Math.abs(x1 - x0);
-  const h = Math.abs(y1 - y0);
-  if (w < 2 || h < 2) return [[x0, y0]];
-  const sx = x1 > x0 ? 1 : -1;
-  const sy = y1 > y0 ? 1 : -1;
-  const ox = Math.min(x0, x1);
-  const oy = Math.min(y0, y1);
-  const out = [];
-  for (let y = 0; y <= h; y++) {
-    for (let x = 0; x <= w; x++) {
-      const u = (x / w) * 2 - 1;
-      const v = -(((y / h) * 2 - 1) * sy * sy + (sy < 0 ? 0 : 0));
-      const t = Math.PI * v;
-      const hx = 16 * Math.sin(t) ** 3;
-      const hy = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-      if (u * 16 <= hx && u * 16 >= -hx && v * 16 <= hy + 4) out.push([ox + x * sx, oy + y * sy]);
-    }
-  }
-  return out.length ? out : rectCells(x0, y0, x1, y1, true);
-}
-
-export function arrowCells(x0, y0, x1, y1) {
-  const shaft = lineCells(x0, y0, x1, y1);
-  const ang = Math.atan2(y1 - y0, x1 - x0);
-  const head = Math.max(3, Math.min(14, Math.hypot(x1 - x0, y1 - y0) * 0.24));
-  const out = [...shaft];
-  for (const w of [-1, 1]) {
-    const a = ang + Math.PI + (w * Math.PI) / 6;
-    out.push(...lineCells(x1, y1, Math.round(x1 + Math.cos(a) * head), Math.round(y1 + Math.sin(a) * head)));
-  }
-  return dedupePairs(out);
 }
 
 /* ---------------- fills ---------------- */
@@ -228,24 +196,7 @@ function push(stack, seen, grid, x, y) {
   stack.push(i);
 }
 
-/** Spray / airbrush: a random scatter inside the brush footprint. */
-export function sprayCells(grid, x, y, brush, density = 0.45, rand = Math.random) {
-  const out = [];
-  const r = Math.max(0.5, (brush - 1) / 2);
-  const round = r * r;
-  const n = Math.max(1, Math.round(round * density * 3));
-  for (let k = 0; k < n; k++) {
-    const a = rand() * Math.PI * 2;
-    const d = Math.sqrt(rand()) * r;
-    const cx = Math.round(x + Math.cos(a) * d);
-    const cy = Math.round(y + Math.sin(a) * d);
-    if (grid.inBounds && !grid.inBounds(cx, cy)) continue;
-    out.push([cx, cy]);
-  }
-  return dedupePairs(out);
-}
-
-/** Soft round brush in cells, for the airbrush falloff. */
+/** Soft round brush in cells, for the round brush shape. */
 export function roundOffsets(brush) {
   const offs = [];
   const r = (brush - 1) / 2;
@@ -257,27 +208,22 @@ export function roundOffsets(brush) {
   return offs.length ? offs : [[0, 0]];
 }
 
-export const SHAPES = ['line', 'rect', 'ellipse', 'triangle', 'star', 'heart', 'arrow', 'polygon'];
+export const SHAPES = ['line', 'rect', 'ellipse', 'polygon'];
 
+/**
+ * The four shapes a drag can make.
+ *
+ * Star, heart, arrow, triangle and spray were here too and are gone: they were
+ * never part of what Heartopia's own boards ask for, and every one of them was
+ * another path through the same cell maths that nobody had tested.
+ */
 export function shapeCells(shape, x0, y0, x1, y1, filled) {
   switch (shape) {
-    case 'line':
-      return lineCells(x0, y0, x1, y1);
     case 'rect':
       return rectCells(x0, y0, x1, y1, filled);
     case 'ellipse':
       return ellipseCells(x0, y0, x1, y1, filled);
-    case 'triangle':
-      return polygonCells(
-        [[Math.round((x0 + x1) / 2), Math.round(y0)], [Math.round(x0), Math.round(y1)], [Math.round(x1), Math.round(y1)]],
-        filled
-      );
-    case 'star':
-      return starCells(x0, y0, x1, y1, 5);
-    case 'heart':
-      return heartCells(x0, y0, x1, y1);
-    case 'arrow':
-      return arrowCells(x0, y0, x1, y1);
+    case 'line':
     default:
       return lineCells(x0, y0, x1, y1);
   }

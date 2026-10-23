@@ -15,6 +15,7 @@ import { Input, TOOLS } from './input.js';
 import { StrokeDisplay } from './net/display.js';
 import { UI, cleanNick, validateNick, groupForIndex } from './ui.js';
 import { FLAT_COLORS, HEARTOPIA_GROUPS } from './data/heartopia-palette.js';
+import { stampFromFile, stampFromDataUrl, stampPreview } from './game/stamps.js';
 import { BRUSH_SIZES, DEFAULTS } from './presets.js';
 import { makeRoomCode, normalizeRoomCode, detectDevice, clamp } from './util.js';
 import { History, patchWrite } from './game/history.js';
@@ -23,7 +24,7 @@ import { Preview3D } from './game/render3d.js';
 import { loadMesh } from './game/meshdata.js';
 import { findItem, itemIdForBoard, cellTotal } from './game/slots.js';
 import { outlineFor } from './game/outline.js';
-import { faceInfo, paintable } from './game/faces.js';
+import { faceInfo, paintable, maskFor } from './game/faces.js';
 import { loadImage, rasterize, photoToCells, screenshotToCells, applyCellsToFace, matchSlot } from './ui/importer.js';
 import { palette } from './color/science.js';
 
@@ -58,6 +59,10 @@ const state = {
   colorHex: FLAT_COLORS[16],
   brush: 1,
   brushSizes: BRUSH_SIZES,
+  // An imported brush tip, or null for the built-in square/round footprints.
+  // Local to this player: it changes how a stroke is laid down, never what the
+  // room stores, so remote players just see the cells it paints.
+  stamp: null,
   brushShape: 'square',
   shapeFilled: false,
   fillGlobal: false,
@@ -99,7 +104,35 @@ const actions = {
   },
   setBrushShape: (s) => {
     state.brushShape = s;
+    // One rule, so the row can never claim two things at once: choosing a
+    // built-in block drops the imported tip. Picking a new tip takes it back.
+    if (state.stamp) {
+      state.stamp = null;
+      saveProfile({ ...loadProfile(), nick: state.nick, color: state.color, tip: null });
+      ui.setTip(null);
+    }
     ui.setTool(state.tool);
+  },
+  /**
+   * Take a tip from an image file. Returns false with a message when the file
+   * is not a usable tip, so the UI can say so instead of quietly doing nothing.
+   */
+  setStampFromFile: async (file) => {
+    try {
+      const { stamp, dataUrl } = await stampFromFile(file);
+      state.stamp = stamp;
+      saveProfile({ ...loadProfile(), nick: state.nick, color: state.color, tip: dataUrl });
+      ui.setTip(stampPreview(stamp));
+      return true;
+    } catch (e) {
+      ui.toast(`That file is not a brush tip: ${e.message}`, 'bad');
+      return false;
+    }
+  },
+  clearStamp: () => {
+    state.stamp = null;
+    saveProfile({ ...loadProfile(), nick: state.nick, color: state.color, tip: null });
+    ui.setTip(null);
   },
   setShapeFilled: (v) => {
     state.shapeFilled = !!v;
@@ -694,22 +727,38 @@ function faceTexture(faceId) {
   const c = document.createElement('canvas');
   c.width = g.w;
   c.height = g.h;
-  const ctx = c.getContext('2d');
-  // The garment's own paper. Untouched cells come back transparent from the
-  // grid, so this has to be laid down first and the paint composited over it:
-  // putImageData writes pixels instead of blending them, and a face baked that
-  // way turns the whole garment into a hole the backdrop shines through.
-  ctx.imageSmoothingEnabled = false;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillRect(0, 0, g.w, g.h);
-  const paint = document.createElement('canvas');
-  paint.width = g.w;
-  paint.height = g.h;
-  const pctx = paint.getContext('2d');
-  const img = pctx.createImageData(g.w, g.h);
-  g.fillRGBA(new Uint32Array(img.data.buffer), room.display ? room.display.cellsFor(idx) : null);
-  pctx.putImageData(img, 0, 0);
-  ctx.drawImage(paint, 0, 0);
+  const ctx = c.getContext('2d', { willReadFrequently: true });
+  // Two opposite failures have both been shipped here, and the fix is the same
+  // single pass that avoids both.
+  //
+  // 1. putImageData over a blank canvas replaces pixels rather than blending
+  //    them, so untouched cells came back with alpha 0 and the whole garment
+  //    was a hole the backdrop shone through.
+  // 2. Filling the entire w x h rectangle with paper fixed that but made the
+  //    rectangle opaque. The mesh does not stop at the face's own outline, so
+  //    every corner of the rectangle stuck out of the garment as a white tab,
+  //    and where two tabs bridged over real background they sealed a pocket of
+  //    it inside the silhouette - which is what read as holes. Measured: paper
+  //    over the whole rect traps 1,844 backdrop pixels on the t-shirt at rest,
+  //    clipped to the face mask it traps 28.
+  //
+  // So: inside the mask an unpainted cell is paper, outside it is nothing. The
+  // paint itself is composited in the same buffer, which is why one
+  // putImageData is now correct where it used to be the bug.
+  const item = room.design.item;
+  const mask = maskFor(item.id, faceId);
+  const img = ctx.createImageData(g.w, g.h);
+  const words = new Uint32Array(img.data.buffer);
+  g.fillRGBA(words, room.display ? room.display.cellsFor(idx) : null);
+  const PAPER = 0xffffffff; // white, opaque, and the same word order on any target
+  for (let i = 0; i < words.length; i++) {
+    if (mask && !mask[i]) {
+      words[i] = 0;
+      continue;
+    }
+    if (!words[i]) words[i] = PAPER;
+  }
+  ctx.putImageData(img, 0, 0);
   return c;
 }
 
@@ -1027,6 +1076,17 @@ function boot() {
   ui.setColorIdx(state.colorIdx);
   ui.setTool(state.tool);
   ui.setBrush(state.brush);
+  // Bring back the tip this player imported last time. Async, and silent if it
+  // is gone: a missing brush is not worth stopping the app for.
+  if (profile.tip) {
+    stampFromDataUrl(profile.tip).then(
+      ({ stamp }) => {
+        state.stamp = stamp;
+        ui.setTip(stampPreview(stamp));
+      },
+      () => {}
+    );
+  }
   watchLayout();
   bindKeys();
   // Touch the palette once so the perceptual tables are warm before a person

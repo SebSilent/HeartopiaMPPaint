@@ -121,7 +121,7 @@ test('a mesh build produces textured triangles and costs no work when idle', asy
   assert.ok(draws > 0, 'markDirty did not bring the frame back');
 });
 
-test('backfacing triangles are dropped, front ones are not', async () => {
+test('a cloth shell is drawn whole, with nothing culled away', async () => {
   globalThis.window = { devicePixelRatio: 1 };
   const canvas = mkCanvas();
   let drawn = 0;
@@ -133,9 +133,38 @@ test('backfacing triangles are dropped, front ones are not', async () => {
   p.setMesh(await loadMesh('tshirt'));
   p.build(item);
   p.render();
-  const half = p._tris.length;
-  assert.ok(drawn > half * 0.25, `only ${drawn} of ${half} drawn, culling looks wrong`);
-  assert.ok(drawn < half * 0.85, `all ${drawn} of ${half} drawn, nothing was culled`);
+  const total = p._tris.length;
+  // This test used to demand the opposite: that well under the whole mesh was
+  // drawn, which was back-face culling working as designed. The mesh is a single
+  // cloth shell rather than a solid, so the away-facing triangles are the only
+  // thing behind a neck, a cuff or a hem, and dropping them punched see-through
+  // holes at exactly the openings a garment genuinely has. Nothing may be culled.
+  assert.ok(drawn > total * 0.95, `only ${drawn} of ${total} triangles drawn: something is being culled, and on a shell that means a hole`);
+});
+
+test('the same mesh from the far side is still drawn whole', async () => {
+  globalThis.window = { devicePixelRatio: 1 };
+  const canvas = mkCanvas();
+  let drawn = 0;
+  canvas.getContext().drawImage = () => {
+    drawn++;
+  };
+  const p = new Preview3D(canvas, bake, null);
+  const item = CLOTHING.find((c) => c.id === 'tshirt');
+  p.setMesh(await loadMesh('tshirt'));
+  p.build(item);
+  // Turning a garment right around must not change how much of it is there: a
+  // shell has no front half to lose. Counting draws from both sides is the whole
+  // point - a large drop was the previous behaviour, and it read as holes.
+  p.yaw = 0;
+  p.render(true);
+  const front = drawn;
+  drawn = 0;
+  p.yaw = Math.PI;
+  p.render(true);
+  const back = drawn;
+  assert.ok(front > 0 && back > 0, `nothing was drawn (front ${front}, back ${back})`);
+  assert.ok(Math.abs(front - back) / front < 0.15, `front ${front} vs back ${back}: one side of the shell is being dropped`);
 });
 
 test('an item with no mesh falls back to the flat panels', async () => {

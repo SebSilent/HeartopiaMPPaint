@@ -20,9 +20,13 @@ const errs = [];
 page.on('pageerror', (e) => errs.push('PAGEERROR ' + e));
 page.on('console', (m) => m.type() === 'error' && errs.push('CONSOLE ' + m.text()));
 await page.goto(`${BASE}/?local=1`, { waitUntil: 'load' });
-await page.fill('#nick', 'Probe');
-await page.click('#join');
-await page.waitForTimeout(1500);
+// The gate closes on its own under ?local=1; wait for the tool row, not the
+// button, or this races the timer that hides it.
+if (await page.locator('#join').isVisible().catch(() => false)) {
+  await page.fill('#nick', 'Probe');
+  await page.click('#join');
+}
+await page.waitForFunction(() => document.querySelectorAll('#tools [data-tool]').length >= 8, null, { timeout: 15000 });
 
 const dock = await page.evaluate(() => {
   const tools = [...document.querySelectorAll('#tools [data-tool]')].map((b) => b.dataset.tool);

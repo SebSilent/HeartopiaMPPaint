@@ -27,10 +27,9 @@ const P = (face, pos, o = {}) => ({ face, pos, yaw: o.yaw || 0, pitch: o.pitch |
 export const MODELS = {
   // ---- canvas: the board itself, standing up ----
   'canvas-16:9-0': [P('main', [0, 0, 0])],
-  book: [
-    P('wide', [-38, 0, 0], { yaw: 28 }),
-    P('tall', [38, -8, 0], { yaw: -28 }),
-  ],
+  // One board, so one panel. It used to stand two faces up side by side at
+  // angles, which was a book with a 4:3 cover that the game does not have.
+  book: [P('tall', [0, 0, 0])],
 
   // ---- clothing. Bodies are a front/back pair with sleeves angled off ----
   tshirt: [

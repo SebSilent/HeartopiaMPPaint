@@ -41,8 +41,19 @@ const GROUPS = {
   book: 'preset-1777399477607',
 };
 
+/**
+ * Which canvas of the catalog group a face is drawn from, when the order of the
+ * group's canvases cannot be trusted to say. See pickCanvas below.
+ */
+const CANVAS_BY_ID = {
+  // The book's group lists a 4:3 canvas next to the 16:9 one. The game offers a
+  // book only the 16:9 board, and 150x114 is the XL 4:3 canvas board besides.
+  book: { tall: 'canvas-1777564834202' },
+};
+
 const ours = [];
 const unmatched = [];
+const notes = [];
 for (const it of [...CLOTHING, ...FURNITURE, ...(BOOK ? [BOOK] : [])]) {
   const gid = GROUPS[it.id];
   const group = (groups || []).find((g) => g.id === gid);
@@ -51,12 +62,64 @@ for (const it of [...CLOTHING, ...FURNITURE, ...(BOOK ? [BOOK] : [])]) {
     continue;
   }
   const cs = group.canvases || [];
-  if (cs.length !== it.faces.length) {
-    unmatched.push(`${it.id}: group has ${cs.length} canvases, item has ${it.faces.length} faces`);
-    continue;
+  for (const f of it.faces) {
+    const canvas = pickCanvas(it.id, f, it.faces, cs);
+    if (!canvas) {
+      unmatched.push(`${it.id}:${f.id}: group ${gid} has no canvas for it (${cs.map((c) => c.name + '#' + c.id).join(', ')})`);
+      continue;
+    }
+    ours.push({ item: it.id, face: f.id, w: f.w, h: f.h, lv: canvas });
   }
-  it.faces.forEach((f, i) => ours.push({ item: it.id, face: f.id, w: f.w, h: f.h, lv: cs[i] }));
 }
+
+/**
+ * Which canvas of the catalog group a face is drawn from.
+ *
+ * Usually that is the group's canvases in order, and for every item except one
+ * the group holds exactly one canvas per face. The book is the exception: its
+ * group still lists a 4:3 canvas at 150x114 next to the 16:9 one at 150x84, and
+ * the game does not offer a 4:3 board for a book. Pairing by index is what
+ * shipped a second book face here, so the book's face is pinned to a canvas by
+ * id and everything else keeps the order.
+ */
+function pickCanvas(itemId, face, faces, canvases) {
+  const want = (CANVAS_BY_ID[itemId] || {})[face.id];
+  if (want) return canvases.find((c) => c.id === want) || null;
+  if (canvases.length === faces.length) return canvases[faces.indexOf(face)];
+  if (canvases.length === 1) return canvases[0];
+  return null;
+}
+
+/**
+ * The book's cover, drawn the way the game draws it.
+ *
+ * Two things here are not what the catalog says, and the shipped data had both
+ * wrong.
+ *
+ * The maskLines put the spine between x 68 and x 82 - fourteen cells, where the
+ * game shows eighteen - and inset the cover to x 5..144, y 1..84. But maskLines
+ * are LINES, not a silhouette, and the book's disabledPixels list is empty: the
+ * game blocks nothing on this board. Reading the lines as a mask made the board
+ * refuse to paint 1,063 of the 12,600 cells a player can actually paint, and
+ * drew a cover narrower than the book.
+ *
+ * So the three panels tile the whole board - cover, spine, cover - with the
+ * spine eighteen cells wide and centred. The outline still reads as a book laid
+ * flat open, and every cell stays paintable, which is what the empty
+ * disabled-pixel list has been saying all along.
+ */
+function bookRings(w, h, spineW) {
+  const x0 = Math.round((w - spineW) / 2);
+  const x1 = x0 + spineW;
+  return [
+    [[0, 0], [x0, 0], [x0, h], [0, h], [0, 0]],
+    [[x0, 0], [x1, 0], [x1, h], [x0, h], [x0, 0]],
+    [[x1, 0], [w, 0], [w, h], [x1, h], [x1, 0]],
+  ];
+}
+
+/** How wide the book's spine is drawn, in cells. */
+const BOOK_SPINE_CELLS = 18;
 
 const items = {};
 for (const o of ours) {
@@ -72,6 +135,13 @@ for (const o of ours) {
     // maskLines is a JSON string, not an array: the catalog stores it encoded.
     const parsed = typeof lv.maskLines === 'string' ? JSON.parse(lv.maskLines) : lv.maskLines;
     rings = parsed.map((ring) => ring.map((p) => [p.x, p.y]));
+  }
+  if (o.item === 'book') {
+    // Replaced rather than trusted: see bookRings. The scraped lines are kept in
+    // the report below so the difference stays visible instead of silently gone.
+    const spine = rings ? rings.map((r) => Math.max(...r.map((p) => p[0])) - Math.min(...r.map((p) => p[0]))).sort((a, b) => a - b)[0] : 0;
+    notes.push(`book:${o.face} catalog spine ${spine} cells inset to x 5..144, drawn as ${BOOK_SPINE_CELLS} centred and the full board`);
+    rings = bookRings(o.w, o.h, BOOK_SPINE_CELLS);
   }
   const off = lv.disabledPixels && lv.disabledPixels.length ? lv.disabledPixels : null;
   if (!rings && !off) continue;
@@ -181,3 +251,4 @@ console.log(
   `faces ${nFaces} with rings ${nRings}  bytes ${body.length}\n` +
     `worst polygon/cell disagreement ${worst.toFixed(2)}% at ${worstName || 'n/a'}`
 );
+for (const n of notes) console.log('note ' + n);

@@ -122,17 +122,24 @@ export const FURNITURE = [
 ];
 
 /**
- * The book. Two faces, and each face carries three zones delimited by guide
- * lines - front cover, spine, back cover. The game does not publish where
- * those lines fall, so they are draggable rather than guessed.
+ * The book. One board, 16:9 at 150x84, painted as a cover laid flat: front
+ * cover, spine down the middle, back cover.
+ *
+ * It used to have a second face here, 4:3 at 150x114, because the catalog group
+ * for the book still lists that canvas and the faces were paired to canvases by
+ * index. It is not a book board - it is the XL 4:3 canvas board, the same size,
+ * which is how it slipped in - and art-pia's own guide repeats the claim, so
+ * neither the data nor the documentation is on your side here; the game only
+ * offers the one.
+ *
+ * The three zones are drawn by the face's own outline (see FACE_DATA.book), not
+ * by separate guide lines: the outline is three panels tiling the board with an
+ * eighteen-cell spine in the middle, and every cell on it is paintable.
  */
 export const BOOK = {
   id: 'book',
   name: 'Book',
-  faces: [
-    { id: 'wide', label: 'Face 4:3', w: 150, h: 114, zone: true },
-    { id: 'tall', label: 'Face 16:9', w: 150, h: 84, zone: true },
-  ],
+  faces: [{ id: 'tall', label: 'Cover 16:9', w: 150, h: 84 }],
   zones: ['Front cover', 'Spine', 'Back cover'],
 };
 

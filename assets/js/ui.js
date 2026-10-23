@@ -101,6 +101,9 @@ export class UI {
       groups: document.getElementById('groups'),
       swatches: document.getElementById('swatches'),
       brushes: document.getElementById('brushes'),
+    tipBtn: document.getElementById('tipBtn'),
+    tipFile: document.getElementById('tipFile'),
+    tipImg: document.getElementById('tipImg'),
       tools: document.getElementById('tools'),
       toolOpts: document.getElementById('toolOpts'),
       current: document.getElementById('currentColor'),
@@ -323,6 +326,15 @@ export class UI {
       if (b) this.actions.setBrush(Number(b.dataset.brush));
     });
 
+    e.tipBtn.addEventListener('click', () => e.tipFile.click());
+    e.tipFile.addEventListener('change', () => {
+      const f = e.tipFile.files && e.tipFile.files[0];
+      // Clear the input first: picking the same file twice has to re-import it,
+      // and a file input that still holds the old value fires no change event.
+      e.tipFile.value = '';
+      if (f) this.actions.setStampFromFile(f);
+    });
+
     // No hand tool: pinch and space-drag do that job, like every other canvas.
     e.tools.innerHTML = TOOL_DEFS.map(
       ([id, label, key]) =>
@@ -464,6 +476,22 @@ export class UI {
   setBrush(size) {
     for (const b of this.el.brushes.children) b.classList.toggle('active', Number(b.dataset.brush) === size);
     this.state.brush = size;
+  }
+
+  /** Show the loaded tip, or go back to the plain "Tip" label when it is null. */
+  setTip(previewUrl) {
+    const b = this.el.tipBtn;
+    if (!b) return;
+    if (!previewUrl) {
+      b.classList.remove('set', 'active');
+      this.el.tipImg.removeAttribute('src');
+      b.title =
+        "Import a brush tip: a picture of a shape, used as the stamp. It paints whole cells, so it stays inside the game's grid.";
+      return;
+    }
+    this.el.tipImg.src = previewUrl;
+    b.classList.add('set', 'active');
+    b.title = 'Imported tip is in use. Click to choose another; pick Square or Round to go back to the built-in blocks.';
   }
 
   /* ---------------- face tabs ---------------- */

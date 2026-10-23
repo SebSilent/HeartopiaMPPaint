@@ -7,6 +7,7 @@
 
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
+import { makeStamp } from '../assets/js/game/stamps.js';
 
 // Input checks for Pointer Events support at bind time.
 globalThis.window = globalThis.window || {};
@@ -263,5 +264,35 @@ test('a stroke keeps one lamport stamp across every batch', () => {
   assert.equal(new Set(room.ops.map((o) => o.seq)).size, 1, 'all batches share the stroke stamp');
   const all = room.ops.flatMap((o) => o.cells);
   assert.equal(new Set(all).size, all.length, 'no cell is sent twice in one stroke');
+  input.destroy();
+});
+
+/** A 20x6 tip whose only ink is one row: a flat brush. */
+const barStamp = () => {
+  const a = new Uint8Array(20 * 6);
+  for (let x = 0; x < 20; x++) a[3 * 20 + x] = 255;
+  return makeStamp(20, 6, a);
+};
+
+test('an imported tip replaces the footprint, not just the look of it', () => {
+  const { input, grid } = makeInput({ state: { brush: 5, stamp: barStamp() } });
+  // One tap dead centre of cell (5,5): the stub view is at scale 4, so 20px.
+  // Landing on a whole cell keeps the assertion about centring honest.
+  input.onDown(pe({ clientX: 20, clientY: 20 }));
+  input.onUp(pe({ clientX: 20, clientY: 20 }));
+
+  const on = [];
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (grid.color[y * 10 + x]) on.push([x, y]);
+  assert.equal(on.length, 5, `a flat tip must paint 5 cells, got ${on.length}`);
+  assert.equal(new Set(on.map((o) => o[1])).size, 1, 'all on one row');
+  assert.deepEqual(on.map((o) => o[0]).sort((a, b) => a - b), [3, 4, 5, 6, 7], `centred on the tap: ${JSON.stringify(on)}`);
+  input.destroy();
+});
+
+test('with no tip the same tap paints the built-in square', () => {
+  const { input, grid } = makeInput({ state: { brush: 5, stamp: null } });
+  input.onDown(pe({ clientX: 20, clientY: 20 }));
+  input.onUp(pe({ clientX: 20, clientY: 20 }));
+  assert.equal([...grid.color].filter((c) => c).length, 25, 'square 5x5');
   input.destroy();
 });

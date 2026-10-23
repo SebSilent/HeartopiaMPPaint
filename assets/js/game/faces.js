@@ -30,6 +30,21 @@ function decodeRow(row, y, w, m) {
   }
 }
 
+/** Even-odd point in polygon, over one or more rings. */
+function insideRings(rings, x, y) {
+  let c = false;
+  for (const ring of rings) {
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0];
+      const yi = ring[i][1];
+      const xj = ring[j][0];
+      const yj = ring[j][1];
+      if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c;
+    }
+  }
+  return c;
+}
+
 export function faceInfo(itemId, faceId) {
   const f = (FACE_DATA[itemId] || {})[faceId];
   return f || null;
@@ -63,6 +78,17 @@ export function maskFor(itemId, faceId) {
   if (f.off) {
     const rows = typeof f.off === 'string' ? f.off.split(';') : [];
     for (let y = 0; y < rows.length && y < f.h; y++) decodeRow(rows[y], y, f.w, m);
+  } else if (f.rings && f.rings.length) {
+    // The book ships an outline and no cell list at all: every cell reads as
+    // paintable even though the shape is a 15-point polygon inset 13 rows from
+    // the top. Where the game has not enumerated the cells, its own boundary is
+    // the next best authority, and better than letting paint land outside a
+    // silhouette the player can see.
+    for (let y = 0; y < f.h; y++) {
+      for (let x = 0; x < f.w; x++) {
+        if (!insideRings(f.rings, x + 0.5, y + 0.5)) m[y * f.w + x] = 0;
+      }
+    }
   }
   cache.set(key, m);
   return m;

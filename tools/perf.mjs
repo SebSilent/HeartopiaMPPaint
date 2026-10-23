@@ -59,7 +59,40 @@ const ms = await p.evaluate(async () => {
   t0 = performance.now();
   for (let i = 0; i < 20; i++) pr.refresh();
   const refresh = (performance.now() - t0) / 20;
-  return { tris: n, renderMs: +render.toFixed(2), refreshMs: +refresh.toFixed(2) };
+
+  // The real thing: the garment's own mesh, which is what the panel now shows.
+  const { loadMesh } = await import('/assets/js/game/meshdata.js');
+  const mesh = await loadMesh('tshirt');
+  const pm = new Preview3D(cv, () => bake(), null);
+  pm.setMesh(mesh);
+  const mn = pm.build(item);
+  // Forced: the cost of a frame that actually changed.
+  t0 = performance.now();
+  for (let i = 0; i < 20; i++) pm.render(true);
+  const meshRender = (performance.now() - t0) / 20;
+  // Unforced, after one change: what the loop pays 60 times a second while
+  // nobody is doing anything.
+  pm.render();
+  t0 = performance.now();
+  for (let i = 0; i < 200; i++) pm.render();
+  const meshIdle = (performance.now() - t0) / 200;
+  t0 = performance.now();
+  for (let i = 0; i < 5; i++) pm.refresh();
+  const meshRefresh = (performance.now() - t0) / 5;
+  t0 = performance.now();
+  pm.setMesh(mesh);
+  pm.build(item);
+  const buildMs = performance.now() - t0;
+  return {
+    panels: { tris: n, renderMs: +render.toFixed(2), refreshMs: +refresh.toFixed(2) },
+    real: {
+      tris: mn,
+      renderMs: +meshRender.toFixed(2),
+      idleMs: +meshIdle.toFixed(3),
+      refreshMs: +meshRefresh.toFixed(2),
+      buildMs: +buildMs.toFixed(2),
+    },
+  };
 });
 say('COST ' + JSON.stringify(ms));
 

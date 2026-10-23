@@ -779,7 +779,22 @@ input[type="range"].slider::-moz-range-thumb {
   align-content: start;
 }
 
-.opts { grid-area: opts; }
+/* Its own grid area *and* its own row layout. This element used to carry the
+   .dock-row class as well, and .dock-row says grid-area: row - declared later in
+   this file, at the same specificity, so it won and put the tool options in the
+   same grid cell as the brush row. They sat on top of the brush buttons and the
+   tip thumbnail at every width tested, which is the overlap being reported.
+   The flex declarations are repeated here rather than inherited so nothing can
+   claim this cell again. */
+.opts {
+  grid-area: opts;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+/* No tool options means no row at all, not an empty one taking the gap. */
+.opts:empty { display: none; }
 
 .tools { grid-area: tools; display: flex; flex-direction: column; gap: 6px; }
 .tool {

@@ -62,7 +62,7 @@ test('every furniture item and the book have the faces the game has', () => {
     chair: [[54, 28], [54, 28], [54, 54]],
     tablelamp: [[80, 46], [80, 46], [128, 28]],
     floorlamp: [[80, 52], [80, 52], [128, 16]],
-    book: [[150, 114], [150, 84]],
+    book: [[150, 84]],
   };
   assert.equal(FURNITURE.length, 10);
   for (const [id, sizes] of Object.entries(expected)) {
@@ -70,7 +70,9 @@ test('every furniture item and the book have the faces the game has', () => {
     assert.ok(item, `${id} exists`);
     assert.deepEqual(item.faces.map((f) => [f.w, f.h]), sizes, id);
   }
-  assert.equal(BOOK.faces.length, 2);
+  // One board. A second face here was the XL 4:3 canvas board mislabelled as a
+  // book cover, and it silently halved what the picker offers.
+  assert.equal(BOOK.faces.length, 1);
   assert.equal(BOOK.zones.length, 3);
 });
 

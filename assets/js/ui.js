@@ -276,7 +276,9 @@ export class UI {
       const d = item.faces[0];
       e.dims.textContent = `${d.w} × ${d.h}`;
     } else {
-      e.dims.textContent = `${item.faces.length} faces · ${cellTotal(item).toLocaleString()} cells`;
+      // Singular matters now: the book is one board, and "1 faces" was only ever
+      // hidden because every non-canvas item used to have two or more.
+      e.dims.textContent = `${item.faces.length} ${item.faces.length === 1 ? 'face' : 'faces'} · ${cellTotal(item).toLocaleString()} cells`;
     }
     e.boardNote.textContent = this.state.roomLocked ? 'Set by the room.' : '';
     e.ratios.classList.toggle('locked', !!this.state.roomLocked);

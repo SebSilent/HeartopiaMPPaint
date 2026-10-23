@@ -140,6 +140,16 @@ export class Preview3D {
         (m.nrm[ia * 3 + 1] + m.nrm[ib * 3 + 1] + m.nrm[ic * 3 + 1]) / 3,
         (m.nrm[ia * 3 + 2] + m.nrm[ib * 3 + 2] + m.nrm[ic * 3 + 2]) / 3,
       ];
+      // The three vertex normals as well as their average. One shade per
+      // triangle is what makes a 1,350-triangle garment look like folded card:
+      // the mesh's normals are already smooth (shared per vertex, rebuilt after
+      // relaxing), so the brightness genuinely differs between a triangle's own
+      // corners and interpolating it is free detail the average throws away.
+      const vn = [
+        [m.nrm[ia * 3], m.nrm[ia * 3 + 1], m.nrm[ia * 3 + 2]],
+        [m.nrm[ib * 3], m.nrm[ib * 3 + 1], m.nrm[ib * 3 + 2]],
+        [m.nrm[ic * 3], m.nrm[ic * 3 + 1], m.nrm[ic * 3 + 2]],
+      ];
       const tex = this._texFor(face);
       const facing = Math.abs(dot3(norm3(n), LIGHT));
       const lit = 0.66 + 0.34 * facing;
@@ -150,7 +160,7 @@ export class Preview3D {
       const uc = [m.uv[ic * 2] * face.w, (1 - m.uv[ic * 2 + 1]) * face.h];
       // `two` marks a triangle that must be drawn from both sides: see the cull
       // note in draw() for why a cloth shell needs that.
-      const tri = { a, b, c, u: ua, v: ub, w2: uc, tex, lit, loop: null, face: face.id, a2: a[2], b2: b[2], c2: c[2], n, two: true };
+      const tri = { a, b, c, u: ua, v: ub, w2: uc, tex, lit, loop: null, face: face.id, a2: a[2], b2: b[2], c2: c[2], n, vn, two: true };
       tris.push(tri);
     }
     this.radius = Math.max(1, m.half * S);
@@ -340,7 +350,27 @@ export class Preview3D {
       const q = this._project(t.b, dist, focal, w, h, ext);
       const r = this._project(t.c, dist, focal, w, h, ext);
       if (!q || !r) continue;
-      view.push({ t, p, q, r, z: (t.a2 + t.b2 + t.c2) / 3 });
+      // Shade from the oriented normal, every frame. The value baked at build
+      // time dotted the mesh's model-space normal with LIGHT, but LIGHT is a
+      // view-space direction (panels dot it with an already-oriented normal and
+      // are right). The result was a lamp welded to the garment: orbiting did not
+      // move the light at all, so the shirt kept whatever brightness it happened
+      // to have when it was built and read as scattered grey plateaus rather than
+      // cloth turning under a light.
+      //
+      // This is one orient and one dot per triangle, which is not what the frame
+      // costs; tools/perf.mjs measures it.
+      let lit = t.lit;
+      let lits = null;
+      if (t.vn) {
+        // Per-corner brightness, so the overlay can interpolate across the face
+        // instead of stamping one flat value onto it.
+        lits = [0, 1, 2].map((k) => 0.66 + 0.34 * Math.abs(dot3(norm3(orient(t.vn[k], this.yaw, this.pitch, 0)), LIGHT)));
+        lit = (lits[0] + lits[1] + lits[2]) / 3;
+      } else if (t.n) {
+        lit = 0.66 + 0.34 * Math.abs(dot3(norm3(orient(t.n, this.yaw, this.pitch, 0)), LIGHT));
+      }
+      view.push({ t, p, q, r, z: (t.a2 + t.b2 + t.c2) / 3, lit, lits });
     }
     // Painter: smallest rz first is furthest from the camera.
     view.sort((a, b) => a.z - b.z);
@@ -355,7 +385,7 @@ export class Preview3D {
       if (!loop) {
         // Mesh triangles bleed into their neighbours to hide the seam cracks;
         // panels are clipped to the face outline and must not cross it.
-        drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.t.lit, v.t.two);
+        drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.lit, v.t.two, v.lits);
         continue;
       }
       let pts = clips.get(loop);
@@ -371,7 +401,7 @@ export class Preview3D {
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
       ctx.closePath();
       ctx.clip();
-      drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.t.lit);
+      drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.lit);
       ctx.restore();
     }
   }
@@ -450,7 +480,7 @@ function tri(tris, a, b, c, u, v, w2, tex, lit, loop, faceId) {
 
 /* ---------------- triangle rasteriser ---------------- */
 
-function drawTri(ctx, p, q, r, u, v, w2, tex, lit, bleed) {
+function drawTri(ctx, p, q, r, u, v, w2, tex, lit, bleed, lits) {
   if (!tex) return;
   // A triangle with no area cannot be mapped, but the threshold has to be near
   // nothing: at a steep orbit a whole band of the sleeve projects to slivers of a
@@ -493,13 +523,71 @@ function drawTri(ctx, p, q, r, u, v, w2, tex, lit, bleed) {
   ctx.save();
   ctx.clip();
   ctx.setTransform(m11, m12, m21, m22, e, f);
+  // One path serves both the clip and the shading fill below. The current path is
+  // not part of the canvas state, so it survives save/restore and can be filled
+  // again once the clip is off - tracing it twice per triangle was 1,350
+  // redundant path constructions a frame.
   ctx.drawImage(tex, 0, 0);
   ctx.restore();
 
-  if (lit < 1) {
-    // Grey, not brown: multiply-style darkening of a white garment has to stay
-    // neutral or the model reads as the wrong colour entirely.
-    path(ctx, p, q, r);
+  // Grey, not brown: multiply-style darkening of a white garment has to stay
+  // neutral or the model reads as the wrong colour entirely.
+  if (lits && Math.abs(area) > 70) {
+    // Interpolate the shade across the triangle. One flat value per triangle is
+    // what a 1,350-triangle mesh looks like: folded card, with a visible edge at
+    // every seam, because the brightness jumps instead of rolling. The mesh's own
+    // normals are smooth, so the three corners really do have three different
+    // brightnesses and the field between them is linear - which is exactly what a
+    // canvas gradient is.
+    //
+    // The construction: find the corner whose brightness lies between the other
+    // two, and the point on the opposite edge that shares it. The line through
+    // those two is an iso-brightness line, so the brightness axis is perpendicular
+    // to it, and the two extreme corners project onto that axis as the gradient's
+    // endpoints.
+    // The extremes have to be found among all three corners. Comparing only
+    // corners 0 and 2 and calling the remaining one the middle is wrong whenever
+    // corner 1 is the brightest or the darkest, and then the axis, the iso point
+    // and both colour stops are all wrong - which made the surface more faceted
+    // than flat shading, not less.
+    let iA = 0;
+    let iC = 0;
+    for (const k of [1, 2]) {
+      if (lits[k] < lits[iA]) iA = k;
+      if (lits[k] > lits[iC]) iC = k;
+    }
+    // The three indices are 0, 1 and 2, so the one that is neither extreme is
+    // whatever is left. Only meaningful once the corners actually differ, checked
+    // by the span below.
+    const iB = 3 - iA - iC;
+    const span = lits[iC] - lits[iA];
+    if (span < 0.004) {
+      ctx.fillStyle = `rgba(0,0,0,${(1 - lit).toFixed(3)})`;
+      ctx.fill();
+    } else {
+      const pts = [p, q, r];
+      const B = pts[iB];
+      const t = (lits[iB] - lits[iA]) / span;
+      const dx = pts[iA][0] + (pts[iC][0] - pts[iA][0]) * t - B[0];
+      const dy = pts[iA][1] + (pts[iC][1] - pts[iA][1]) * t - B[1];
+      const len = Math.hypot(dx, dy) || 1;
+      // Perpendicular to the iso line: that is the direction brightness changes in.
+      const gx = -dy / len;
+      const gy = dx / len;
+      const s0 = (pts[iA][0] - B[0]) * gx + (pts[iA][1] - B[1]) * gy;
+      const s1 = (pts[iC][0] - B[0]) * gx + (pts[iC][1] - B[1]) * gy;
+      // Whichever extreme projects lower on the axis carries the darker corner.
+      const first = s0 <= s1 ? iA : iC;
+      const last = s0 <= s1 ? iC : iA;
+      const lo = Math.min(s0, s1);
+      const hi = Math.max(s0, s1);
+      const g = ctx.createLinearGradient(B[0] + lo * gx, B[1] + lo * gy, B[0] + hi * gx, B[1] + hi * gy);
+      g.addColorStop(0, `rgba(0,0,0,${(1 - lits[first]).toFixed(3)})`);
+      g.addColorStop(1, `rgba(0,0,0,${(1 - lits[last]).toFixed(3)})`);
+      ctx.fillStyle = g;
+      ctx.fill();
+    }
+  } else if (lit < 1) {
     ctx.fillStyle = `rgba(0,0,0,${(1 - lit).toFixed(3)})`;
     ctx.fill();
   }

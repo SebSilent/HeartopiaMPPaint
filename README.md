@@ -17,7 +17,8 @@ Pick a nickname, get a room code, send it to people. Everyone paints at once, li
 - **Eyedropper, eraser, four brush sizes**
 - **PNG export at the board's exact pixel size**, ready to copy into the game
 - **The game's own items**, clothing, furniture and the book, on their real faces at their real sizes
-- **Game silhouettes enforced**, the cells Heartopia refuses to paint stay unpaintable for everyone in the room
+- **Game silhouettes enforced**, the cells Heartopia refuses to paint stay unpaintable for everyone in the room,
+  and the outline you see is traced from exactly those cells, so the line and the brush cannot disagree
 - **The garment's own 3D shape**, the fabric mesh the game wears, orbit by drag, zoom by wheel, repainted on every stroke
 - **Phone, tablet, desktop. Nothing to install.**
 

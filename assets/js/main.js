@@ -16,14 +16,14 @@ import { StrokeDisplay } from './net/display.js';
 import { UI, cleanNick, validateNick, groupForIndex } from './ui.js';
 import { FLAT_COLORS, HEARTOPIA_GROUPS } from './data/heartopia-palette.js';
 import { stampFromFile, stampFromDataUrl, stampPreview } from './game/stamps.js';
-import { BRUSH_SIZES, DEFAULTS } from './presets.js';
+import { BRUSH_SIZES, DEFAULTS, LEVELS } from './presets.js';
 import { makeRoomCode, normalizeRoomCode, detectDevice, clamp } from './util.js';
 import { History, patchWrite } from './game/history.js';
 import { Blueprint } from './ui/blueprint.js';
 import { Preview3D } from './game/render3d.js';
 import { loadMesh } from './game/meshdata.js';
-import { findItem, itemIdForBoard, cellTotal } from './game/slots.js';
-import { outlineFor } from './game/outline.js';
+import { findItem, itemIdForBoard, boardForItem, cellTotal } from './game/slots.js';
+import { outlineFor, boardOutline } from './game/outline.js';
 import { faceInfo, paintable, maskFor } from './game/faces.js';
 import { loadImage, rasterize, photoToCells, screenshotToCells, applyCellsToFace, matchSlot } from './ui/importer.js';
 import { palette } from './color/science.js';
@@ -498,14 +498,16 @@ function setOutlineFor(faceId) {
   // Read the item off the room, not off the mirror in state: 'ready' can land
   // before the handlers that fill the mirror in.
   const item = room.design.id;
-  // Clothing uses the outline in the mesh header, which is the print area.
-  // Every other slot uses the game's own maskLines for that face.
-  const o = outlineFor(item, faceId) || faceOutline(item, faceId);
+  // Draw the game's own maskLines. One ring off the mesh header would outline only
+  // one of the two islands on a split face - one trouser leg, one shoe toe - and
+  // leave the rest of the paintable area bare. See boardOutline() for the numbers.
+  const o = boardOutline(item, faceId);
   const on = state.showOutline && !!o;
   view.outline = on ? o : null;
   const cells = faceCells(item, faceId);
-  // paintable() only knows the game's own disabled cells, which clothing does
-  // not carry in this data, so fall back to the whole face.
+  // The number shown next to the toggle is the cells the game really lets you
+  // paint. Clothing does carry a disabled list, so the fallback only ever applies
+  // where the game ships no cell list at all: free canvas boards, and the book.
   const free = paintable(item, faceId) || cells;
   ui.setOutlineInfo(!!o, free, cells, room.design.item.name);
 }

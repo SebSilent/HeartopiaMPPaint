@@ -11,6 +11,7 @@ import { Room } from '../assets/js/net/room.js';
 import { createServer } from '../server/relay.js';
 import { randomId } from '../assets/js/util.js';
 import { itemIdForBoard } from '../assets/js/game/slots.js';
+import { History, newPatch, patchAdd, sealPatch, finishCapture, patchWrite } from '../assets/js/game/history.js';
 
 const { server, sweep } = createServer();
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -257,4 +258,38 @@ test('unknown message types are dropped instead of relayed', async () => {
   a._send({ k: 'nonsense', cells: 'AAAA' });
   await new Promise((r) => setTimeout(r, 300));
   assert.equal(a.grid.version, before);
+});
+
+test('an undo repaints the pre-stroke picture on every peer', async () => {
+  const code = 'UND01';
+  const a = makeRoom(code, 'ada');
+  const b = makeRoom(code, 'boris');
+  await until(() => a.canPaint && b.canPaint, 'two players ready');
+
+  const face = a.design.active;
+  const cells = [0, 1, 2];
+  // What input.js _applyIndices does: record the before-values, then paint.
+  const patch = newPatch(face);
+  patchAdd(patch, a.design, cells);
+  a.paint(cells, 42, face);
+  await until(() => b.grid.color[2] === 42, 'the stroke to reach boris');
+
+  // What _endStroke does: seal, read the after-values, record.
+  const sealed = sealPatch(patch);
+  finishCapture(a.design, sealed);
+  assert.deepEqual([...sealed.to], [42, 42, 42]);
+  const h = new History();
+  h.push(sealed);
+
+  // What main.js step() does: pop and repaint the from-values as a fresh op.
+  // The fresh stamp is the whole point: reusing the stroke's seq would read as
+  // stale on every peer and the undo would silently do nothing remotely.
+  const entry = h.undo();
+  assert.deepEqual([...entry.values], [0, 0, 0], 'undo hands back the blank board');
+  const { indices, values } = patchWrite(entry);
+  a.paintVaried(indices, values, entry.face);
+  assert.equal(a.grid.color[0], 0, 'the undo applied locally at once');
+
+  await until(() => b.grid.color[0] === 0 && b.grid.color[2] === 0, 'the undo to reach boris');
+  assert.equal(a.grid.checksum(), b.grid.checksum(), 'both boards agree on the restored picture');
 });

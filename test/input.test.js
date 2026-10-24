@@ -15,7 +15,7 @@ globalThis.window.PointerEvent = function PointerEvent() {};
 
 import { Grid } from '../assets/js/game/grid.js';
 import { SingleFaceDesign } from '../assets/js/game/design.js';
-import { History } from '../assets/js/game/history.js';
+import { History, patchWrite } from '../assets/js/game/history.js';
 import { Input, TOOLS, paintColorFor } from '../assets/js/input.js';
 
 const SCALE = 4;
@@ -107,15 +107,16 @@ function makeInput(overrides = {}) {
     brushSizes: [1, 2, 3, 5],
     ...overrides.state,
   };
+  const history = new History();
   const input = new Input({
     room,
     view,
     getState: () => state,
     setState: (patch) => Object.assign(state, patch),
-    history: new History(),
+    history,
   });
   created.push(input);
-  return { input, grid, view, room, state };
+  return { input, grid, view, room, state, history };
 }
 
 after(() => {
@@ -382,5 +383,57 @@ test('the brush footprint box previews the cells a stroke would paint', () => {
   input.drawPreview(ctx, view);
   const rects = ctx.calls.filter((c) => c[0] === 'strokeRect').map((c) => c.slice(1));
   assert.deepEqual(rects, [[24.5, 16.5, 12, 12]], 'box over cells 6..8 x 4..6');
+  input.destroy();
+});
+
+/* ---------------- undo ---------------- */
+
+test('a finished stroke leaves one undo step, and undoing it restores the board', () => {
+  const { input, grid, room, history } = makeInput();
+  input.onDown(pe({ clientX: 2, clientY: 2 }));
+  input.onMove(pe({ clientX: 10, clientY: 2 }));
+  input.onMove(pe({ clientX: 18, clientY: 2 }));
+  input.onUp(pe({ clientX: 18, clientY: 2 }));
+
+  assert.equal(history.canUndo, true, 'the stroke is undoable');
+  assert.equal(history.past.length, 1, 'one stroke is one undo step, however many batches');
+
+  const entry = history.undo();
+  assert.equal(entry.face, 0);
+  assert.equal(entry.label, 'stroke');
+  const { indices, values } = patchWrite(entry);
+  assert.ok(indices.length >= 3, `expected the whole stroke, got ${indices.length} cells`);
+  assert.ok([...values].every((v) => v === 0), 'undo hands back the pre-stroke values');
+
+  // Apply it the way main.js step() does: group by value, one fresh stamp.
+  const byColor = new Map();
+  for (let i = 0; i < indices.length; i++) {
+    const c = values[i];
+    if (!byColor.has(c)) byColor.set(c, []);
+    byColor.get(c).push(indices[i]);
+  }
+  const seq = room.nextSeq();
+  for (const [c, list] of byColor) room.paintLocal(list, c, seq, entry.face);
+  assert.ok([...grid.color].every((c) => c === 0), 'the board is blank again');
+  input.destroy();
+});
+
+test('a fill is one undo step through the same region path', () => {
+  const { input, grid, history } = makeInput({ state: { tool: TOOLS.FILL } });
+  input.onDown(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE }));
+  input.onUp(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE }));
+
+  assert.ok([...grid.color].every((c) => c === 16), 'the blank board floods to the colour');
+  assert.equal(history.canUndo, true, 'the fill is undoable');
+  assert.equal(history.past.length, 1);
+
+  const entry = history.undo();
+  assert.equal(entry.label, 'fill');
+  const { indices, values } = patchWrite(entry);
+  assert.equal(indices.length, 100, 'the whole 10x10 board was one blank region');
+  assert.ok([...values].every((v) => v === 0));
+
+  const back = history.redo();
+  assert.ok([...back.values].every((v) => v === 16), 'redo hands back the fill');
   input.destroy();
 });

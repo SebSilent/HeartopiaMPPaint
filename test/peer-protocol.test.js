@@ -14,6 +14,7 @@ import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { Room } from '../assets/js/net/room.js';
 import { randomId } from '../assets/js/util.js';
+import { itemIdForBoard } from '../assets/js/game/slots.js';
 
 /** Mirrors the WebRTC star: one host, everyone else reaches them through it. */
 class Mesh {
@@ -260,6 +261,29 @@ test('a newcomer after a host handover still gets the real picture', async () =>
   await until(() => late.canPaint, 'late joiner ready');
   await until(() => late.grid.color[7] === 33 && late.grid.color[9] === 33, 'late joiner to get the picture');
   assert.equal(late.grid.checksum(), a.grid.checksum(), 'the painting survived the host swap');
+});
+
+test('a guest cannot resize the room in peer mode either', async () => {
+  const code = 'P2P7';
+  const host = join(code, 'host', { ratio: '16:9', level: 2 }); // 100 x 56
+  await until(() => host.canPaint, 'host ready');
+  const a = join(code, 'ada', { ratio: '16:9', level: 2 });
+  await until(() => a.canPaint, 'guest ready');
+  await until(() => a.grid.w === 100, 'guest to adopt the board');
+
+  host.paint([4], 21);
+  await until(() => a.grid.color[4] === 21, 'paint to propagate');
+
+  // Bypass the local check: the host must still refuse to apply it.
+  a._send({ k: 'design', item: itemIdForBoard('1:1', 0), seq: a.nextSeq() });
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(host.grid.w, 100, 'host board untouched');
+  assert.equal(host.grid.color[4], 21, 'the picture survived');
+  assert.equal(a.grid.w, 100);
+
+  assert.equal(a.isDesignHost, false, 'the host owns the design');
+  assert.equal(a.setItem(itemIdForBoard('1:1', 0)), false);
+  assert.equal(a.grid.w, 100, 'guest did not resize itself');
 });
 
 test('a guest that paints before it has a slot is still safe', async () => {

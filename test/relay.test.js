@@ -10,6 +10,7 @@ import CONFIG from '../assets/js/config.js';
 import { Room } from '../assets/js/net/room.js';
 import { createServer } from '../server/relay.js';
 import { randomId } from '../assets/js/util.js';
+import { itemIdForBoard } from '../assets/js/game/slots.js';
 
 const { server, sweep } = createServer();
 await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -194,6 +195,58 @@ test('the board size comes from the room, not from the joiner', async () => {
   await until(() => b.canPaint, 'joiner ready');
   await until(() => b.grid.w === 100 && b.grid.h === 56, 'joiner to adopt the room board');
   assert.equal(b.room.ratio, '16:9');
+});
+
+test('the design host can resize the room', async () => {
+  const code = 'AUTH2';
+  const a = makeRoom(code, 'ada', { ratio: '1:1', level: 0 });
+  await until(() => a.canPaint, 'host ready');
+  const b = makeRoom(code, 'boris', { ratio: '1:1', level: 0 });
+  await until(() => b.canPaint, 'guest ready');
+
+  assert.equal(a.isDesignHost, true, 'the first player owns the design');
+  assert.equal(a.setItem(itemIdForBoard('16:9', 2)), true);
+  await until(() => b.grid.w === 100 && b.grid.h === 56, 'guest to follow the host resize');
+});
+
+test('a guest cannot resize the room, and is repaired if it tries', async () => {
+  const code = 'AUTH1';
+  const a = makeRoom(code, 'ada', { ratio: '16:9', level: 2 }); // 100 x 56
+  await until(() => a.canPaint, 'host ready');
+  const b = makeRoom(code, 'boris', { ratio: '16:9', level: 2 });
+  await until(() => b.canPaint, 'guest ready');
+  await until(() => b.grid.w === 100, 'guest to adopt the board');
+
+  a.paint([0, 1, 2], 12);
+  await until(() => b.grid.color[2] === 12, 'paint to propagate');
+
+  // A guest that bypasses its own UI is ignored by the relay, which hands the
+  // real picture back instead of letting the room go stale.
+  b._send({ k: 'design', item: itemIdForBoard('1:1', 0), seq: b.nextSeq() });
+  await new Promise((r) => setTimeout(r, 300));
+  assert.equal(a.grid.w, 100, 'host board untouched');
+  assert.equal(a.grid.color[2], 12, 'the picture survived');
+  await until(() => b.grid.w === 100 && b.grid.color[2] === 12, 'guest repaired from the relay');
+  assert.equal(a.grid.checksum(), b.grid.checksum());
+
+  // And the guest's own picker is a no-op, so it never desyncs itself.
+  assert.equal(b.isDesignHost, false);
+  assert.equal(b.setItem(itemIdForBoard('1:1', 0)), false);
+  assert.equal(b.grid.w, 100, 'guest did not resize itself');
+});
+
+test('the design host role passes to the next player when the host leaves', async () => {
+  const code = 'AUTH3';
+  const a = makeRoom(code, 'ada', { ratio: '1:1', level: 0 });
+  await until(() => a.canPaint, 'host ready');
+  const b = makeRoom(code, 'boris', { ratio: '1:1', level: 0 });
+  await until(() => b.canPaint, 'guest ready');
+  assert.equal(b.isDesignHost, false);
+
+  a.close();
+  await until(() => b.isDesignHost, 'boris to inherit the design');
+  assert.equal(b.setItem(itemIdForBoard('16:9', 2)), true);
+  await until(() => b.grid.w === 100, 'boris to resize the room');
 });
 
 test('unknown message types are dropped instead of relayed', async () => {

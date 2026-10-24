@@ -778,13 +778,32 @@ export class UI {
   openDesignDialog() {
     const d = document.getElementById('designDialog');
     d.hidden = false;
-    const state = { family: this.state.designFamily || 'canvas', item: this.state.designItem };
+    const state = {
+      family: this.state.designFamily || 'canvas',
+      item: this.state.designItem,
+      ratio: this.state.ratio,
+      level: this.state.level,
+    };
     const fams = document.getElementById('fFams');
     const items = document.getElementById('fItems');
+    const boardRow = document.getElementById('fBoardRow');
+    const ratios = document.getElementById('fRatios');
+    const levels = document.getElementById('fLevels');
     const info = document.getElementById('fInfo');
+    const apply = document.getElementById('fApply');
+
+    // A canvas card is a family of boards, not one item: ratio and precision
+    // together pick the size. The canvas tab therefore gets the same two
+    // pickers as the join gate - a list of level-0 cards could never express
+    // "XL 16:9", which is why switching size used to do nothing at all.
+    const isCanvas = () => state.family === 'canvas';
+    const chosen = () => (isCanvas() ? itemIdForBoard(state.ratio, state.level) : state.item);
+
     const draw = () => {
-      const item = findItem(state.item);
+      const item = findItem(chosen());
       for (const b of fams.children) b.classList.toggle('active', b.dataset.fam === state.family);
+      items.hidden = isCanvas();
+      boardRow.hidden = !isCanvas();
       items.innerHTML = CATALOG[state.family]
         .map(
           (i) =>
@@ -792,14 +811,43 @@ export class UI {
         )
         .join('');
       for (const b of items.children) b.classList.toggle('active', b.dataset.item === state.item);
-      if (item) info.textContent = `${item.faces.length} ${item.faces.length === 1 ? 'face' : 'faces'}`;
+      this._syncPick(ratios, ratios.querySelector(`[data-ratio="${state.ratio}"]`));
+      this._syncPick(levels, levels.querySelector(`[data-level="${state.level}"]`));
+      if (item) {
+        info.textContent = isCanvas()
+          ? `${item.faces[0].w} × ${item.faces[0].h}`
+          : `${item.faces.length} ${item.faces.length === 1 ? 'face' : 'faces'}`;
+      }
+      const same = chosen() === this.state.designItem;
+      // A guest may browse the picker, but the button would only ever toast at
+      // them, so say who can press it instead of letting them find out.
+      const allowed = this.state.canDesign;
+      apply.disabled = same || !allowed;
+      apply.textContent = !allowed
+        ? 'Host only'
+        : same
+          ? 'Already the room design'
+          : 'Switch for everyone';
     };
+
     fams.innerHTML = FAMILIES.map((f) => `<button data-fam="${f}">${FAMILY[f].name}</button>`).join('');
+    ratios.innerHTML = RATIOS.map(
+      (r) => `<button class="pick-ratio" data-ratio="${r}" title="${r}">${r}</button>`
+    ).join('');
+    levels.innerHTML = LEVELS.map(
+      (l) => `<button class="pick-level" data-level="${l.id}" title="${l.name}">${l.tag}</button>`
+    ).join('');
+
     fams.onclick = (ev) => {
       const b = ev.target.closest('[data-fam]');
       if (!b) return;
       state.family = b.dataset.fam;
-      state.item = state.family === 'canvas' ? this.state.designItem : CATALOG[state.family][0].id;
+      if (isCanvas()) {
+        state.ratio = this.state.ratio;
+        state.level = this.state.level;
+      } else {
+        state.item = CATALOG[state.family][0].id;
+      }
       draw();
     };
     items.onclick = (ev) => {
@@ -809,18 +857,39 @@ export class UI {
         draw();
       }
     };
+    ratios.onclick = (ev) => {
+      const b = ev.target.closest('[data-ratio]');
+      if (!b) return;
+      state.ratio = b.dataset.ratio;
+      draw();
+    };
+    levels.onclick = (ev) => {
+      const b = ev.target.closest('[data-level]');
+      if (!b) return;
+      state.level = Number(b.dataset.level);
+      draw();
+    };
     const close = () => {
       d.hidden = true;
       fams.onclick = null;
       items.onclick = null;
+      ratios.onclick = null;
+      levels.onclick = null;
     };
     document.getElementById('fCancel').onclick = close;
     document.getElementById('fApply').onclick = () => {
+      const id = chosen();
+      const canvas = isCanvas();
       close();
-      this.actions.setItem(state.item);
+      if (id === this.state.designItem) return;
+      // A resize has to go through setBoard so the room's ratio and level move
+      // with it; setItem alone would leave the pickers describing the old size.
+      if (canvas) this.actions.setBoard(state.ratio, state.level);
+      else this.actions.setItem(id);
     };
-    document.getElementById('fWarn').textContent =
-      'This replaces the design for everyone in the room and wipes what is on it. There is no undo for a switch.';
+    document.getElementById('fWarn').textContent = this.state.canDesign
+      ? 'This replaces the design for everyone in the room and wipes what is on it. There is no undo for a switch.'
+      : 'Only the room host can change the design. You can look, but the switch will not go through.';
     draw();
   }
 

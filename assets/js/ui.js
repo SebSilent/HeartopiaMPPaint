@@ -103,7 +103,6 @@ export class UI {
       brushes: document.getElementById('brushes'),
     tipBtn: document.getElementById('tipBtn'),
     tipFile: document.getElementById('tipFile'),
-    tipImg: document.getElementById('tipImg'),
       tools: document.getElementById('tools'),
       toolOpts: document.getElementById('toolOpts'),
       current: document.getElementById('currentColor'),
@@ -370,9 +369,21 @@ export class UI {
         chips('shape', [
           ['square', 'Square', 'Hard-edged, like the game'],
           ['round', 'Round', 'Round brush footprint'],
+          ['spray', 'Spray', 'Scattered dabs inside the round brush'],
         ], st.brushShape),
         'shape'
       );
+      if (st.brushShape === 'spray') {
+        html += row(
+          'Density',
+          chips('density', [
+            ['0.125', 'Sparse', 'An eighth of the disc per dab'],
+            ['0.25', 'Normal', 'A quarter of the disc per dab'],
+            ['0.5', 'Heavy', 'Half the disc per dab'],
+          ], String(st.sprayDensity)),
+          'density'
+        );
+      }
     }
     if (DRAG_TOOLS.includes(st.tool)) {
       html += row(
@@ -407,6 +418,8 @@ export class UI {
     e.toolOpts.innerHTML = html;
     for (const b of e.toolOpts.querySelectorAll('[data-shape]'))
       b.classList.toggle('active', b.dataset.shape === st.brushShape);
+    for (const b of e.toolOpts.querySelectorAll('[data-density]'))
+      b.classList.toggle('active', Number(b.dataset.density) === st.sprayDensity);
     for (const b of e.toolOpts.querySelectorAll('[data-fillmode]'))
       b.classList.toggle('active', (b.dataset.fillmode === 'filled') === !!st.shapeFilled);
     for (const b of e.toolOpts.querySelectorAll('[data-fillscope]'))
@@ -418,9 +431,10 @@ export class UI {
   _wireToolOptions() {
     const e = this.el;
     e.toolOpts.addEventListener('click', (ev) => {
-      const b = ev.target.closest('button[data-shape],button[data-fillmode],button[data-fillscope],button[data-mirror]');
+      const b = ev.target.closest('button[data-shape],button[data-density],button[data-fillmode],button[data-fillscope],button[data-mirror]');
       if (!b) return;
       if (b.dataset.shape) this.actions.setBrushShape(b.dataset.shape);
+      if (b.dataset.density) this.actions.setSprayDensity(Number(b.dataset.density));
       if (b.dataset.fillmode) this.actions.setShapeFilled(b.dataset.fillmode === 'filled');
       if (b.dataset.fillscope) this.actions.setFillGlobal(b.dataset.fillscope === 'all');
       if (b.dataset.mirror) this.actions.setMirror(['off', 'x', 'y', 'xy'].indexOf(b.dataset.mirror));
@@ -484,14 +498,24 @@ export class UI {
   setTip(previewUrl) {
     const b = this.el.tipBtn;
     if (!b) return;
+    // The thumbnail exists only while a tip is loaded. A permanent <img> with
+    // no src reads as a broken image to tooling, so until there is something
+    // real to show the button carries just the "Tip" label.
+    let img = b.querySelector('img');
     if (!previewUrl) {
       b.classList.remove('set', 'active');
-      this.el.tipImg.removeAttribute('src');
+      if (img) img.remove();
       b.title =
         "Import a brush tip: a picture of a shape, used as the stamp. It paints whole cells, so it stays inside the game's grid.";
       return;
     }
-    this.el.tipImg.src = previewUrl;
+    if (!img) {
+      img = document.createElement('img');
+      img.id = 'tipImg';
+      img.alt = '';
+      b.prepend(img);
+    }
+    img.src = previewUrl;
     b.classList.add('set', 'active');
     b.title = 'Imported tip is in use. Click to choose another; pick Square or Round to go back to the built-in blocks.';
   }

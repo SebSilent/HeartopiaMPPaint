@@ -2,7 +2,7 @@
 // connected, closed, and spanning the box the player dragged.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { lineCells, rectCells, ellipseCells, polygonCells, fillCells, roundOffsets } from '../assets/js/game/shapes.js';
+import { lineCells, rectCells, ellipseCells, polygonCells, fillCells, roundOffsets, sprayOffsets } from '../assets/js/game/shapes.js';
 import { Grid } from '../assets/js/game/grid.js';
 
 const set = (pairs) => new Set(pairs.map(([x, y]) => x + ',' + y));
@@ -131,6 +131,39 @@ test('a degenerate ellipse is the cell the pointer is in', () => {
   // paint (4, 2), a cell the pointer never touched.
   assert.deepEqual(ellipseCells(3.9, 2.1, 3.9, 2.1, false), [[3, 2]]);
   assert.deepEqual(ellipseCells(3.9, 2.1, 3.9, 2.1, true), [[3, 2]]);
+});
+
+/** A seeded rng, so a spray test pins one draw instead of hoping. */
+function seeded(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s = (s + 0x6d2b79f5) | 0;
+    let t = Math.imul(s ^ (s >>> 15), 1 | s);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+test('sprayOffsets samples distinct cells from the round footprint', () => {
+  // Brush 5 is a 13-cell disc; normal density asks for a quarter of it, which
+  // rounds to 3 cells. Every one must come from that disc, and no two can be
+  // the same cell - a dab that inks a cell twice is just a smaller dab.
+  const disc = roundOffsets(5);
+  assert.equal(disc.length, 13);
+  const out = sprayOffsets(5, 0.25, seeded(7));
+  assert.equal(out.length, 3);
+  assert.equal(set(out).size, 3, 'a dab inks a cell at most once');
+  for (const o of out) assert.ok(disc.some((d) => d[0] === o[0] && d[1] === o[1]), 'inside the disc');
+});
+
+test('spray density scales the scatter, and 1 is the whole disc', () => {
+  const disc = roundOffsets(5);
+  assert.equal(sprayOffsets(5, 0.125, seeded(1)).length, 2);
+  assert.equal(sprayOffsets(5, 0.25, seeded(1)).length, 3);
+  assert.equal(sprayOffsets(5, 0.5, seeded(1)).length, 7);
+  const all = sprayOffsets(5, 1, seeded(1));
+  assert.equal(all.length, 13);
+  assert.deepEqual(set(all), set(disc), 'full density is the round footprint itself');
 });
 
 test('roundOffsets scans once per size and hands back the same array after', () => {

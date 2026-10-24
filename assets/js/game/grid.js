@@ -238,6 +238,36 @@ export function strokeCells(grid, x0, y0, x1, y1, brush) {
   return out;
 }
 
+/**
+ * The cells one dab of a shaped brush covers when stamped at every seed, as
+ * flat indices: in bounds, deduplicated, in paint order. One scratch pass - a
+ * fast drag with a big tip can push a few hundred thousand candidates through
+ * here per pointer event, so this must not build pair arrays or string keys.
+ * Shares strokeCells' scratch: every call takes a fresh stamp from the same
+ * counter, so no call can mistake another call's marks for its own.
+ * @param {Array<[number, number]>} seeds  seed positions, floored here
+ * @param {Array<[number, number]>} offsets  dab offsets from roundOffsets/stampOffsets
+ */
+export function dabCells(grid, seeds, offsets) {
+  const out = [];
+  grid._stamp++;
+  const stamp = grid._stamp;
+  for (const [sx, sy] of seeds) {
+    const cx = Math.floor(sx);
+    const cy = Math.floor(sy);
+    for (const [dx, dy] of offsets) {
+      const x = cx + dx;
+      const y = cy + dy;
+      if (!grid.inBounds(x, y)) continue;
+      const i = y * grid.w + x;
+      if (grid._scratch[i] === stamp) continue;
+      grid._scratch[i] = stamp;
+      out.push(i);
+    }
+  }
+  return out;
+}
+
 export function brushOffsets(brush) {
   const a = [];
   const half = (brush - 1) / 2;

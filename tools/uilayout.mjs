@@ -23,9 +23,18 @@ for (const [name, w, h] of SIZES) {
   // one most likely to change the row's width.
   await page.evaluate(() => {
     const b = document.getElementById('tipBtn');
-    if (b) b.classList.add('set');
-    const i = document.getElementById('tipImg');
-    if (i && !i.src.includes('data:')) i.src =
+    if (!b) return;
+    b.classList.add('set');
+    // The app builds the thumbnail only when a tip is set (setTip in ui.js),
+    // so mirror that here to measure the row with the thumb in place.
+    let i = b.querySelector('img');
+    if (!i) {
+      i = document.createElement('img');
+      i.id = 'tipImg';
+      i.alt = '';
+      b.prepend(i);
+    }
+    if (!i.src.includes('data:')) i.src =
       'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAAF0lEQVR4nGP8z8DwnwEGMDAmAG0JFw0YBgsA5gAAAAZlAQKQcAAAAASUVORK5CYII=';
   });
   await page.waitForTimeout(400);

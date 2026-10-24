@@ -8,6 +8,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeStamp } from '../assets/js/game/stamps.js';
+import { shapeCells, roundOffsets } from '../assets/js/game/shapes.js';
 
 // Input checks for Pointer Events support at bind time.
 globalThis.window = globalThis.window || {};
@@ -95,7 +96,8 @@ function makeRoom(grid) {
 const created = [];
 
 function makeInput(overrides = {}) {
-  const grid = new Grid(10, 10);
+  const [gw, gh] = overrides.grid || [10, 10];
+  const grid = new Grid(gw, gh);
   const view = makeView();
   const room = makeRoom(grid);
   const state = {
@@ -167,6 +169,26 @@ test('the eraser clears cells back to 0', () => {
   input.onDown(pe({ clientX: 2, clientY: 2 }));
   input.onUp(pe({ clientX: 2, clientY: 2 }));
   assert.equal(grid.color[0], 0);
+  input.destroy();
+});
+
+test('a round eraser erases the dab, not the square', () => {
+  // brushShape is global state, so the eraser can be round too. It erases
+  // through the same dab path: a square 3 paints 3x3, a round 3 erases the
+  // plus out of it, and the four corners survive.
+  const { input, grid, state } = makeInput({ state: { brush: 3, brushShape: 'square' } });
+  input.onDown(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE })); // square 3: cells 4..6 x 4..6
+  input.onUp(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+  assert.equal([...grid.color].filter((c) => c).length, 9, 'a 3x3 block to erase from');
+
+  state.tool = TOOLS.ERASER;
+  state.brushShape = 'round';
+  input.onDown(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE })); // round 3: the plus
+  input.onUp(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+
+  const left = [];
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (grid.color[y * 10 + x]) left.push([x, y]);
+  assert.deepEqual(left.map((p) => p.join(',')).sort(), ['4,4', '4,6', '6,4', '6,6'], 'only the corners survive');
   input.destroy();
 });
 
@@ -268,6 +290,20 @@ test('a stroke keeps one lamport stamp across every batch', () => {
   input.destroy();
 });
 
+test('a round-brush stroke also sends no cell twice', () => {
+  // The sent-filter is now a typed-array generation mark, not a Set. Overlap
+  // between consecutive dabs must still collapse to one send per cell.
+  const { input, room } = makeInput({ state: { brush: 5, brushShape: 'round' } });
+  input.onDown(pe({ clientX: 2, clientY: 2 }));
+  for (let x = 2; x < 38; x += 3) input.onMove(pe({ clientX: x, clientY: 2 }));
+  input.onUp(pe({ clientX: 38, clientY: 2 }));
+
+  assert.ok(room.ops.length >= 2, 'expected several batches for a long drag');
+  const all = room.ops.flatMap((o) => o.cells);
+  assert.equal(new Set(all).size, all.length, 'no cell is sent twice in one stroke');
+  input.destroy();
+});
+
 /** A 20x6 tip whose only ink is one row: a flat brush. */
 const barStamp = () => {
   const a = new Uint8Array(20 * 6);
@@ -318,6 +354,180 @@ test('a drag to a fractional cell paints what the drag to its floor paints', () 
   const whole = run(7 * SCALE, 5 * SCALE); // cell (7, 5)
   assert.deepEqual(frac, whole, 'the fractional drag must land on the same cells');
   assert.ok(frac.length >= 6 && frac.length < 80, `a short round line, not a smear: ${frac.length} cells`);
+});
+
+test('a round brush paints exactly the union of its dabs along the drag', () => {
+  // The hot path used to build a [x,y] pair array per candidate cell and
+  // dedupe it with string keys. dabCells replaces that with one scratch pass;
+  // this pins the painted result to the reference pipeline it replaced.
+  const { input, grid } = makeInput({ state: { brush: 5, brushShape: 'round' } });
+  input.onDown(pe({ clientX: 2 * SCALE + 1, clientY: 2 * SCALE + 1 })); // cell (2.25, 2.25)
+  input.onMove(pe({ clientX: 7 * SCALE + 2, clientY: 4 * SCALE + 3 })); // cell (7.5, 4.75)
+  input.onUp(pe({ clientX: 7 * SCALE + 2, clientY: 4 * SCALE + 3 }));
+
+  const want = new Set();
+  const seeds = [[7.5, 4.75], ...shapeCells('line', 2.25, 2.25, 7.5, 4.75, false)];
+  for (const [sx, sy] of seeds) {
+    const fx = Math.floor(sx);
+    const fy = Math.floor(sy);
+    for (const [dx, dy] of roundOffsets(5)) {
+      const x = fx + dx;
+      const y = fy + dy;
+      if (x >= 0 && y >= 0 && x < 10 && y < 10) want.add(y * 10 + x);
+    }
+  }
+  const got = [];
+  for (let i = 0; i < 100; i++) if (grid.color[i]) got.push(i);
+  assert.deepEqual(got.sort((a, b) => a - b), [...want].sort((a, b) => a - b));
+  input.destroy();
+});
+
+test('a mirrored round brush paints the dab union and its reflection, each cell once', () => {
+  // mirrorIndices runs after the dab union, on flat indices, and nothing pinned
+  // that interaction for shaped tips. The reference is the same union, plus
+  // every painted cell flipped across the x axis.
+  const { input, grid, room } = makeInput({ state: { brush: 3, brushShape: 'round', mirror: 1 } });
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE })); // cell (2, 2)
+  input.onMove(pe({ clientX: 6 * SCALE, clientY: 2 * SCALE })); // cell (6, 2)
+  input.onUp(pe({ clientX: 6 * SCALE, clientY: 2 * SCALE }));
+
+  const want = new Set();
+  const seeds = [[6, 2], ...shapeCells('line', 2, 2, 6, 2, false)];
+  for (const [sx, sy] of seeds) {
+    const fx = Math.floor(sx);
+    const fy = Math.floor(sy);
+    for (const [dx, dy] of roundOffsets(3)) {
+      const x = fx + dx;
+      const y = fy + dy;
+      if (x >= 0 && y >= 0 && x < 10 && y < 10) {
+        want.add(y * 10 + x);
+        want.add(y * 10 + (9 - x)); // the x mirror
+      }
+    }
+  }
+  const got = [];
+  for (let i = 0; i < 100; i++) if (grid.color[i]) got.push(i);
+  assert.deepEqual(got.sort((a, b) => a - b), [...want].sort((a, b) => a - b));
+
+  const sent = room.ops.flatMap((o) => o.cells);
+  assert.equal(new Set(sent).size, sent.length, 'no cell sent twice');
+  input.destroy();
+});
+
+test('a spray tap inks a fixed share of the disc, inside it', () => {
+  // The count is pinned by density - a quarter of the 13-cell disc of brush 5
+  // rounds to 3 - while which cells is the rng's business; every one must stay
+  // inside the disc the player aimed at.
+  const { input, grid } = makeInput({ state: { brush: 5, brushShape: 'spray' } });
+  input.onDown(pe({ clientX: 20, clientY: 20 })); // cell (5, 5)
+  input.onUp(pe({ clientX: 20, clientY: 20 }));
+
+  const on = [];
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (grid.color[y * 10 + x]) on.push([x, y]);
+  assert.equal(on.length, 3, `one dab of normal density inks 3 of 13 cells, got ${on.length}`);
+  const disc = new Set(roundOffsets(5).map(([dx, dy]) => (5 + dy) * 10 + (5 + dx)));
+  for (const [x, y] of on) assert.ok(disc.has(y * 10 + x), `(${x}, ${y}) is inside the disc`);
+  input.destroy();
+});
+
+test('a spray stroke sends no cell twice', () => {
+  // The spray draws a fresh scatter per dab, so the same cell can be inked
+  // many times along a drag; the sent-filter must still collapse it to one
+  // send per cell, exactly as it does for the round brush.
+  const { input, room } = makeInput({ state: { brush: 5, brushShape: 'spray' } });
+  input.onDown(pe({ clientX: 2, clientY: 2 }));
+  for (let x = 2; x < 38; x += 3) input.onMove(pe({ clientX: x, clientY: 2 }));
+  input.onUp(pe({ clientX: 38, clientY: 2 }));
+
+  assert.ok(room.ops.length >= 2, 'expected several batches for a long drag');
+  const all = room.ops.flatMap((o) => o.cells);
+  assert.equal(new Set(all).size, all.length, 'no cell is sent twice in one stroke');
+  input.destroy();
+});
+
+test('a mirrored spray paints each dab and its reflection', () => {
+  // The mirror runs after the dab union, on flat indices; a spray's union is
+  // random per dab, so the exact picture is not pinnable - but every painted
+  // cell must have its reflection painted, and nothing may land outside the
+  // discs and their reflections.
+  const { input, grid, room } = makeInput({ state: { brush: 5, brushShape: 'spray', mirror: 1 } });
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE })); // cell (2, 2)
+  input.onMove(pe({ clientX: 6 * SCALE, clientY: 2 * SCALE })); // cell (6, 2)
+  input.onUp(pe({ clientX: 6 * SCALE, clientY: 2 * SCALE }));
+
+  const want = new Set();
+  const seeds = [[6, 2], ...shapeCells('line', 2, 2, 6, 2, false)];
+  for (const [sx, sy] of seeds) {
+    const fx = Math.floor(sx);
+    const fy = Math.floor(sy);
+    for (const [dx, dy] of roundOffsets(5)) {
+      const x = fx + dx;
+      const y = fy + dy;
+      if (x >= 0 && y >= 0 && x < 10 && y < 10) {
+        want.add(y * 10 + x);
+        want.add(y * 10 + (9 - x)); // the x mirror
+      }
+    }
+  }
+  const got = [];
+  for (let i = 0; i < 100; i++) if (grid.color[i]) got.push(i);
+  assert.ok(got.length > 0, 'the spray painted something');
+  assert.ok(got.length < want.size, 'a scatter, not the solid disc union');
+  for (const i of got) {
+    assert.ok(want.has(i), `cell ${i} is inside the discs and their reflections`);
+    const x = i % 10;
+    const y = (i - x) / 10;
+    assert.ok(got.includes(y * 10 + (9 - x)), `the mirror of (${x}, ${y}) is painted too`);
+  }
+  const sent = room.ops.flatMap((o) => o.cells);
+  assert.equal(new Set(sent).size, sent.length, 'no cell sent twice');
+  input.destroy();
+});
+
+test('a spray previews the disc it scatters inside', () => {
+  // The scatter is random per dab, so the preview must hug the disc, not one
+  // draw of it: whatever cells one dab happens to ink, the next dab breaks.
+  const { input, view } = makeInput({ state: { brush: 3, brushShape: 'spray' } });
+  input.onMove(pe({ clientX: 7 * SCALE + 1.5, clientY: 5 * SCALE + 2.8 })); // hover (7.375, 5.7)
+  const ctx = fakeCtx();
+  input.drawPreview(ctx, view);
+  const fills = ctx.calls.filter((c) => c[0] === 'fillRect').map((c) => c.slice(1));
+  // The disc of brush 3 is a plus: centre + 4 arms. The centre is interior, so
+  // the rim is the four arms: cells (8,5), (6,5), (7,4), (7,6) at scale 4.
+  assert.deepEqual(
+    fills.map((r) => r.join(',')).sort(),
+    ['24,20,4,4', '28,16,4,4', '28,24,4,4', '32,20,4,4'],
+  );
+  const boxes = ctx.calls.filter((c) => c[0] === 'strokeRect');
+  assert.equal(boxes.length, 0, 'no square box for the spray');
+  input.destroy();
+});
+
+test('an imported tip wins over the spray', () => {
+  // A tip is the more specific thing the player asked for; the spray must not
+  // scatter it into a cloud.
+  const { input, grid } = makeInput({ state: { brush: 5, brushShape: 'spray', stamp: barStamp() } });
+  input.onDown(pe({ clientX: 20, clientY: 20 }));
+  input.onUp(pe({ clientX: 20, clientY: 20 }));
+
+  const on = [];
+  for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (grid.color[y * 10 + x]) on.push([x, y]);
+  assert.equal(on.length, 5, `a flat tip must paint 5 cells, got ${on.length}`);
+  assert.equal(new Set(on.map((o) => o[1])).size, 1, 'all on one row');
+  input.destroy();
+});
+
+test('a huge dab on a fast drag does not blow the argument limit', () => {
+  // s.wire.push(...fresh) spread every fresh cell into one call; past ~125k
+  // arguments that is a RangeError, and a big tip on a fast drag on a big board
+  // crosses it inside a single pointer event.
+  const { input, room } = makeInput({ grid: [500, 500], state: { brush: 500, brushShape: 'round' } });
+  input.onDown(pe({ clientX: 250 * SCALE, clientY: 250 * SCALE }));
+  input.onUp(pe({ clientX: 250 * SCALE, clientY: 250 * SCALE }));
+
+  const sent = room.ops.reduce((n, o) => n + o.cells.length, 0);
+  assert.ok(sent > 125000, `expected one event to send more than the argument limit, got ${sent}`);
+  input.destroy();
 });
 
 test('a shape drag to a fractional cell commits the shape its floor commits', () => {
@@ -383,6 +593,42 @@ test('the brush footprint box previews the cells a stroke would paint', () => {
   input.drawPreview(ctx, view);
   const rects = ctx.calls.filter((c) => c[0] === 'strokeRect').map((c) => c.slice(1));
   assert.deepEqual(rects, [[24.5, 16.5, 12, 12]], 'box over cells 6..8 x 4..6');
+  input.destroy();
+});
+
+test('a round brush previews its real footprint, not a square box', () => {
+  // The preview drew brushBox for every tip: a round brush 3 previewed a 3x3
+  // square while the stroke paints a plus of five cells.
+  const { input, view } = makeInput({ state: { brush: 3, brushShape: 'round' } });
+  input.onMove(pe({ clientX: 7 * SCALE + 1.5, clientY: 5 * SCALE + 2.8 })); // hover (7.375, 5.7)
+  const ctx = fakeCtx();
+  input.drawPreview(ctx, view);
+  const fills = ctx.calls.filter((c) => c[0] === 'fillRect').map((c) => c.slice(1));
+  // roundOffsets(3) is a plus: centre + 4 arms. The centre is interior, so the
+  // rim is the four arms: cells (8,5), (6,5), (7,4), (7,6) at scale 4.
+  assert.deepEqual(
+    fills.map((r) => r.join(',')).sort(),
+    ['24,20,4,4', '28,16,4,4', '28,24,4,4', '32,20,4,4'],
+  );
+  input.destroy();
+});
+
+test('an imported tip previews its rim, not a square box', () => {
+  // The rim preview was pinned for the round brush only. A tip goes through the
+  // same dabRim path; a flat bar tip has every cell on the rim, because each
+  // touches unpainted rows above and below.
+  const { input, view } = makeInput({ state: { brush: 5, stamp: barStamp() } });
+  input.onMove(pe({ clientX: 7 * SCALE + 1.5, clientY: 5 * SCALE + 2.8 })); // hover (7.375, 5.7)
+  const ctx = fakeCtx();
+  input.drawPreview(ctx, view);
+  const fills = ctx.calls.filter((c) => c[0] === 'fillRect').map((c) => c.slice(1));
+  // stampOffsets(bar, 5) is one row of five: cells (5..9, 5) at scale 4.
+  assert.deepEqual(
+    fills.map((r) => r.join(',')).sort(),
+    ['20,20,4,4', '24,20,4,4', '28,20,4,4', '32,20,4,4', '36,20,4,4'],
+  );
+  const boxes = ctx.calls.filter((c) => c[0] === 'strokeRect');
+  assert.equal(boxes.length, 0, 'no square box for a shaped tip');
   input.destroy();
 });
 

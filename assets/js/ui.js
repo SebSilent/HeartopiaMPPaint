@@ -955,10 +955,14 @@ export class UI {
   }
 
   setLocked(locked, why) {
-    this.el.app.classList.toggle('locked', locked);
     const b = document.getElementById('lockNote');
-    b.hidden = !locked;
-    if (why) b.textContent = why;
+    // report() ticks every second; skip the DOM writes when nothing changed so
+    // the steady state stays quiet (no per-tick attribute/text mutations).
+    if (this.el.app.classList.contains('locked') !== locked || b.hidden !== !locked) {
+      this.el.app.classList.toggle('locked', locked);
+      b.hidden = !locked;
+    }
+    if (why && b.textContent !== why) b.textContent = why;
   }
 
   _syncPick(container, btn) {

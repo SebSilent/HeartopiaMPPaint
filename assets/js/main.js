@@ -467,7 +467,13 @@ function report(s) {
   // when someone leaves - recompute it on every status change, not just once.
   state.canDesign = room ? room.isDesignHost : true;
   ui.setNet(st);
-  ui.setLocked(!st.ready, st.ready ? '' : 'Waiting for the room…');
+  // Lock only until the room hands us a slot. Slots survive reconnects, so
+  // once we hold one the board on screen is still the room's truth: locking
+  // on every transport flap dims the picture off and back for no reason (the
+  // "reconnect flash"). Painting during a re-hand is already refused by
+  // input.js with a toast, so the lock buys nothing here.
+  const held = !!room && room.me.slot != null;
+  ui.setLocked(!held, held ? '' : 'Waiting for the room…');
 }
 
 function r2s() {

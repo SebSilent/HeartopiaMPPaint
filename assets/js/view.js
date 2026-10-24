@@ -20,6 +20,9 @@ const CHECK_STEP = 8; // css px per square, so it reads the same on every board 
 const GRID_LINE = 'rgba(60,45,25,0.16)';
 const GRID_LINE_MAJOR = 'rgba(60,45,25,0.30)';
 const OUTLINE_INK = 'rgba(36,26,16,0.9)';
+// The garment's own lines, drawn lighter and dashed: they describe the shape, they
+// do not limit the brush, and they must not be mistaken for the paintable edge.
+const OUTLINE_GUIDE = 'rgba(36,26,16,0.42)';
 const OUTLINE_PAPER = 'rgba(255,253,247,0.85)';
 
 export class View {
@@ -282,16 +285,8 @@ export class View {
     ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
   }
 
-  /**
-   * The garment silhouette for the face now on screen. Cell coordinates, so it
-   * scales with the board; drawn over the paint because it is a guide, not art.
-   */
-  _drawOutline(ctx, r) {
-    const o = this.outline;
-    const sx = r.w / o.w;
-    const sy = r.h / o.h;
-    const rings = o.rings || [o.ring];
-    ctx.save();
+  /** Add a list of cell-coordinate rings to the current path. */
+  _ringPath(ctx, rings, r, sx, sy) {
     ctx.beginPath();
     for (const ring of rings) {
       ring.forEach((p, i) => {
@@ -302,14 +297,44 @@ export class View {
       });
       ctx.closePath();
     }
-    ctx.strokeStyle = OUTLINE_INK;
-    ctx.lineWidth = 2;
-    ctx.lineJoin = 'round';
-    ctx.stroke();
-    ctx.setLineDash([4, 4]);
-    ctx.strokeStyle = OUTLINE_PAPER;
-    ctx.lineWidth = 1;
-    ctx.stroke();
+  }
+
+  /**
+   * The edge of the area you can paint, plus the game's own silhouette lines where
+   * they carry information the edge does not. Cell coordinates, so they scale with
+   * the board; drawn over the paint because they are a guide, not art.
+   *
+   * The two are deliberately different weights. The solid line is the truth about
+   * the brush: a cell inside it takes paint and a cell outside it does not. The
+   * dashed line is the garment as the game describes it - two trouser legs inside a
+   * rectangular print area, a spine down a book - and it must never read as a limit,
+   * because painting is not limited by it.
+   */
+  _drawOutline(ctx, r) {
+    const o = this.outline;
+    const sx = r.w / o.w;
+    const sy = r.h / o.h;
+    const rings = o.rings || (o.ring ? [o.ring] : []);
+    ctx.save();
+    if (rings.length) {
+      this._ringPath(ctx, rings, r, sx, sy);
+      ctx.strokeStyle = OUTLINE_INK;
+      ctx.lineWidth = 2;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      ctx.setLineDash([4, 4]);
+      ctx.strokeStyle = OUTLINE_PAPER;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (o.guides && o.guides.length) {
+      this._ringPath(ctx, o.guides, r, sx, sy);
+      ctx.setLineDash([6, 5]);
+      ctx.strokeStyle = OUTLINE_GUIDE;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    }
     ctx.restore();
   }
 

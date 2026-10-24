@@ -326,7 +326,13 @@ function mount(room) {
     // The input layer's option is still called `history`; the local must not be,
     // or it shadows window.history for the whole module.
     history: undo,
-    onHistory: () => ui.setUndoState(undo),
+    // A finished stroke changes what is on the board, so the trace legend and
+    // its "cells to key in" count are stale until they are rebuilt. This fires
+    // once per stroke, not per batch, so the DOM rebuild is affordable.
+    onHistory: () => {
+      ui.setUndoState(undo);
+      refreshTrace();
+    },
   });
   ui.setZoom(view.zoomPercent);
 

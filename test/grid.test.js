@@ -122,3 +122,14 @@ test('fillRGBA writes little-endian RGBA for a palette colour', () => {
   assert.deepEqual([u8[0], u8[1], u8[2], u8[3]], [r, gg, b, 255]);
   assert.deepEqual([u8[4], u8[5], u8[6], u8[7]], [0, 0, 0, 0]); // empty cell
 });
+
+test('strokeCells samples a fractional segment by the cells it falls inside', () => {
+  // The interpolated samples are positions, and cell n spans [n, n+1): a
+  // sample at 2.9 belongs to column 2. Rounding would hand the whole stroke
+  // to columns 3..6 - a cell of drift the pointer never crossed.
+  const g = new Grid(10, 10);
+  const cells = strokeCells(g, 2.9, 2.1, 5.9, 2.1, 1);
+  const xs = cells.map((i) => i % 10).sort((a, b) => a - b);
+  assert.deepEqual(xs, [2, 3, 4, 5], `columns ${JSON.stringify(xs)}`);
+  for (const i of cells) assert.equal(Math.floor(i / 10), 2, 'stays in row 2');
+});

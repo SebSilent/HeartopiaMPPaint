@@ -55,9 +55,23 @@ export function makeStamp(w, h, alpha) {
  * The longest side of the trimmed art sets the scale, so a wide flat brush stays
  * wide and flat rather than being squashed into a square.
  */
+// Memoised per stamp: _paint asks for this on every pointer move, and the pool
+// scan over the whole art is pure waste the second time. Keyed by size and
+// threshold under the stamp, so a re-imported tip (a new object) starts fresh.
+// Callers only read the array, never mutate it.
+const stampCache = new WeakMap();
+
 export function stampOffsets(stamp, size, threshold = 100) {
   if (!stamp) return [[0, 0]];
   const n = Math.max(1, Math.round(size));
+  let per = stampCache.get(stamp);
+  if (!per) {
+    per = new Map();
+    stampCache.set(stamp, per);
+  }
+  const key = `${n}|${threshold}`;
+  const hit = per.get(key);
+  if (hit) return hit;
   const b = stamp.box;
   // The longest side of the art spans `n` cells; the short side keeps its own
   // aspect, so a wide flat brush stays wide and flat instead of being squashed
@@ -74,7 +88,9 @@ export function stampOffsets(stamp, size, threshold = 100) {
       if (best >= threshold) offs.push([Math.round(i - (cols - 1) / 2), Math.round(j - (rows - 1) / 2)]);
     }
   }
-  return offs.length ? offs : [[0, 0]];
+  const out = offs.length ? offs : [[0, 0]];
+  per.set(key, out);
+  return out;
 }
 
 /**

@@ -9,11 +9,24 @@
 
 import { brushOffsets } from './grid.js';
 
-/** Bresenham, so a line is exactly the cells a person would count. */
+/**
+ * Bresenham, so a line is exactly the cells a person would count.
+ *
+ * Every coordinate is floored on the way in, the target twice over: cell n
+ * spans [n, n+1), so a fractional sample belongs to the cell it falls inside -
+ * rounding would steal half of every neighbour. Flooring the target also makes
+ * the termination test an integer comparison. Against a raw fractional x1 an
+ * integer x can never be equal, the loop never breaks, and the guard used to
+ * walk it to 100000 cells on every brush stroke - the freeze while drawing.
+ */
 export function lineCells(x0, y0, x1, y1) {
+  x0 = Math.floor(x0);
+  y0 = Math.floor(y0);
+  x1 = Math.floor(x1);
+  y1 = Math.floor(y1);
   const out = [];
-  let x = x0 | 0;
-  let y = y0 | 0;
+  let x = x0;
+  let y = y0;
   const dx = Math.abs(x1 - x);
   const dy = -Math.abs(y1 - y);
   const sx = x < x1 ? 1 : -1;
@@ -66,7 +79,8 @@ export function ellipseCells(x0, y0, x1, y1, filled) {
   const cy = (y0 + y1) / 2;
   const rx = Math.abs(x1 - x0) / 2;
   const ry = Math.abs(y1 - y0) / 2;
-  if (rx < 0.5 && ry < 0.5) return [[Math.round(x0), Math.round(y0)]];
+  // Degenerate drag: one cell, the one the pointer is in - floor, not round.
+  if (rx < 0.5 && ry < 0.5) return [[Math.floor(x0), Math.floor(y0)]];
   const X0 = Math.floor(Math.min(x0, x1));
   const X1 = Math.ceil(Math.max(x0, x1));
   const Y0 = Math.floor(Math.min(y0, y1));
@@ -115,6 +129,9 @@ export function ellipseCells(x0, y0, x1, y1, filled) {
 
 export function polygonCells(points, filled = true) {
   if (points.length < 2) return [];
+  // Vertices are board samples: floor them so the polygon sits on the cells the
+  // clicks actually landed in, whatever the caller passes.
+  points = points.map(([x, y]) => [Math.floor(x), Math.floor(y)]);
   if (!filled) {
     const out = [];
     for (let i = 0; i < points.length; i++) {
@@ -155,8 +172,11 @@ export function polygonCells(points, filled = true) {
  * @param {{w:number,h:number,colorAt(x,y):number}} grid
  */
 export function fillCells(grid, x, y, target, opts = {}) {
-  const sx = Math.round(x);
-  const sy = Math.round(y);
+  // floor, not round: cell n spans [n, n+1), so the seed is the cell the click
+  // landed in. _floodAt already floors its argument, so this is latent today,
+  // but the function is exported and the rule is the rule.
+  const sx = Math.floor(x);
+  const sy = Math.floor(y);
   const from = grid.colorAt(sx, sy);
   const tol = opts.tolerance | 0;
   const contig = opts.contiguous !== false;
@@ -196,8 +216,14 @@ function push(stack, seen, grid, x, y) {
   stack.push(i);
 }
 
+// Memoised: _paint asks for this on every pointer move, and the O(brush²) scan
+// is pure waste the second time. Callers only read the array, never mutate it.
+const roundCache = new Map();
+
 /** Soft round brush in cells, for the round brush shape. */
 export function roundOffsets(brush) {
+  const hit = roundCache.get(brush);
+  if (hit) return hit;
   const offs = [];
   const r = (brush - 1) / 2;
   for (const dy of brushOffsets(brush)) {
@@ -205,7 +231,9 @@ export function roundOffsets(brush) {
       if (dx * dx + dy * dy <= r * r + 0.6) offs.push([dx, dy]);
     }
   }
-  return offs.length ? offs : [[0, 0]];
+  const out = offs.length ? offs : [[0, 0]];
+  roundCache.set(brush, out);
+  return out;
 }
 
 export const SHAPES = ['line', 'rect', 'ellipse', 'polygon'];

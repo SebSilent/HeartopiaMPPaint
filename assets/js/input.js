@@ -23,7 +23,7 @@
  * cells held beforehand so one undo reverses one action.
  */
 
-import { strokeCells } from './game/grid.js';
+import { strokeCells, dabCells } from './game/grid.js';
 import { clamp, throttle } from './util.js';
 import { FLAT_COLORS } from './data/heartopia-palette.js';
 import CONFIG from './config.js';
@@ -34,8 +34,8 @@ import {
   mirrored,
   mirrorIndices,
   roundOffsets,
+  sprayOffsets,
   polygonCells,
-  dedupePairs,
 } from './game/shapes.js';
 import { newPatch, patchAdd, sealPatch, finishCapture } from './game/history.js';
 import { stampOffsets } from './game/stamps.js';
@@ -305,7 +305,7 @@ export class Input {
       color: paintColorFor(st),
       brush: st.brush,
       last: { x: cell.x, y: cell.y },
-      sent: new Set(),
+      gen: ++sentGen,
       wire: [],
       patch: null,
       recorded: false,
@@ -410,33 +410,45 @@ export class Input {
     const g = this._grid;
     let base;
     const cells = dabOffsets(st);
-    if (cells) {
-      const pairs = [];
-      const seeds = [[x1, y1]];
-      if (Math.hypot(x1 - x0, y1 - y0) > 0.5) seeds.push(...shapeCells('line', x0, y0, x1, y1, false));
-      for (const [sx, sy] of seeds) {
-        // roundOffsets and stampOffsets both hand back [dx, dy]. The destructure
-        // here used to say [dy, dx] and got away with it only because a circle is
-        // symmetric - a tip is not.
-        for (const [dx, dy] of cells) pairs.push([Math.floor(sx) + dx, Math.floor(sy) + dy]);
+    const spray = !cells && isSpray(st);
+    if (cells || spray) {
+      const seeds = dabSeeds(x0, y0, x1, y1);
+      if (spray) {
+        // One fresh scatter per dab: a spray that repeats one pattern along
+        // the drag is a texture, not a spray. Each dab stamps only its own
+        // draw - pooling the draws would stamp every dab with every other
+        // dab's scatter too, quadratically many stamps that paint the disc
+        // nearly solid. dabCells dedupes within a dab, the loop below across
+        // dabs, and the op carries cells, so the randomness never reaches
+        // the wire.
+        const density = st.sprayDensity ?? 0.25;
+        base = [];
+        const seen = new Set();
+        for (const seed of seeds) {
+          for (const i of dabCells(g, [seed], sprayOffsets(st.brush, density))) {
+            if (!seen.has(i)) {
+              seen.add(i);
+              base.push(i);
+            }
+          }
+        }
+      } else {
+        // roundOffsets and stampOffsets both hand back [dx, dy]. The
+        // destructure used to say [dy, dx] and got away with it only because
+        // a circle is symmetric - a tip is not.
+        base = dabCells(g, seeds, cells);
       }
-      base = inBoundsPairs(g, dedupePairs(pairs));
     } else {
       base = strokeCells(g, x0, y0, x1, y1, s.brush);
     }
     const expanded = mirrorIndices(g, base, st.mirror);
-    const fresh = [];
-    for (const i of expanded) {
-      if (s.sent.has(i)) continue;
-      s.sent.add(i);
-      fresh.push(i);
-    }
+    const fresh = sentFilter(g, expanded, s.gen);
     if (!fresh.length) return;
     // Record before writing: the value we need is the one that is there now.
     if (!s.patch) s.patch = newPatch(this.room.design.active);
     patchAdd(s.patch, this.room.design, fresh);
     this._write(fresh, s.color, s.seq);
-    s.wire.push(...fresh);
+    for (const i of fresh) s.wire.push(i);
     this.view.markDirty();
   }
 
@@ -631,13 +643,28 @@ export class Input {
     if (DRAG_SHAPES.has(st.tool) || st.tool === TOOLS.POLYGON) return;
     const ink = st.tool === TOOLS.ERASER ? '#8a7a63' : st.colorHex;
     if (!ink) return;
+    const dab = previewDab(st);
     const box = (cell, alpha) => {
-      const b = brushBox(view, cell, st.brush);
       ctx.save();
       ctx.globalAlpha = alpha;
-      ctx.strokeStyle = ink;
-      ctx.lineWidth = 1.5;
-      ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w, b.h);
+      if (dab) {
+        // The square box lies about a shaped tip: a round brush 3 is a plus of
+        // five cells and a tip is whatever shape the art is. Preview the rim of
+        // the real dab - its cells with an unpainted 4-neighbour - so the
+        // outline hugs what a stroke would paint.
+        ctx.fillStyle = ink;
+        const fx = Math.floor(cell.x);
+        const fy = Math.floor(cell.y);
+        for (const [dx, dy] of dabRim(dab)) {
+          const p = view.toScreen(fx + dx, fy + dy);
+          ctx.fillRect(p.x, p.y, view.scale, view.scale);
+        }
+      } else {
+        const b = brushBox(view, cell, st.brush);
+        ctx.strokeStyle = ink;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(b.x + 0.5, b.y + 0.5, b.w, b.h);
+      }
       ctx.restore();
     };
     if (this.hover) box(this.hover, 0.7);
@@ -672,7 +699,47 @@ export class Input {
 
 }
 
-/** [x,y] pairs -> flat indices, dropping anything off the board. */
+/**
+ * The dab centres along a drag: the end cell, plus the line's cells when the
+ * drag moves. Deduplicated in paint order - the prepended end cell is also the
+ * line's last cell, and a repeated seed is a repeated dab. For the spray that
+ * doubles the density at every move boundary; round and stamp dabs merely
+ * re-ink the same cells, so this changes only what the spray draws.
+ */
+function dabSeeds(x0, y0, x1, y1) {
+  const seeds = [[x1, y1]];
+  if (Math.hypot(x1 - x0, y1 - y0) > 0.5) {
+    for (const p of shapeCells('line', x0, y0, x1, y1, false)) seeds.push(p);
+  }
+  const seen = new Set();
+  return seeds.filter(([x, y]) => {
+    const k = `${Math.floor(x)},${Math.floor(y)}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
+/**
+ * Spray is a brush shape, not a tip: it yields to an imported tip, and like
+ * the round brush it only exists past size 1, where the plain square stroke
+ * already is one cell.
+ */
+function isSpray(st) {
+  return st.brushShape === 'spray' && !st.stamp && st.brush > 1;
+}
+
+/**
+ * The fixed footprint the preview can hug, or null for the plain square
+ * stroke. For the spray that is the disc it scatters inside: the scatter is
+ * random per dab, so previewing one draw would promise a pattern the next dab
+ * breaks.
+ */
+function previewDab(st) {
+  if (isSpray(st)) return roundOffsets(st.brush);
+  return dabOffsets(st);
+}
+
 /**
  * The cells one dab of the current brush covers, as [dx, dy] offsets centred on
  * the seed cell, or null when the brush is a plain square stroke. An imported
@@ -686,12 +753,47 @@ function dabOffsets(st) {
   return null;
 }
 
-function inBoundsPairs(g, pairs) {
+/**
+ * The rim of a dab: its cells with an unpainted 4-neighbour. Memoized per
+ * offsets array - roundOffsets and stampOffsets both hand back stable arrays,
+ * so a WeakMap hit is the norm and the scan runs once per (tip, size).
+ */
+const rimCache = new WeakMap();
+function dabRim(offsets) {
+  let rim = rimCache.get(offsets);
+  if (rim) return rim;
+  const on = new Set();
+  for (const [dx, dy] of offsets) on.add(dx + ',' + dy);
+  rim = offsets.filter(([dx, dy]) =>
+    !on.has(dx + 1 + ',' + dy) || !on.has(dx - 1 + ',' + dy) ||
+    !on.has(dx + ',' + (dy + 1)) || !on.has(dx + ',' + (dy - 1)));
+  rimCache.set(offsets, rim);
+  return rim;
+}
+
+/* ---------- stroke sent-filter ----------
+ * A stroke must not send the same cell twice, and a big tip on a fast drag can
+ * push a few hundred thousand candidates through here per pointer event. A Set
+ * hashes every candidate twice; one Uint32 per cell, tagged with the stroke's
+ * generation, answers in two array reads. Keyed by grid, because the array is
+ * grid.n long. The generation counter is module-level and monotonic, so a mark
+ * can never be mistaken for a later stroke's - short of 2^32 strokes in one
+ * page session, which nothing reaches.
+ */
+const sentScratch = new WeakMap();
+let sentGen = 0;
+
+function sentFilter(grid, candidates, gen) {
+  let marks = sentScratch.get(grid);
+  if (!marks || marks.length !== grid.n) {
+    marks = new Uint32Array(grid.n);
+    sentScratch.set(grid, marks);
+  }
   const out = [];
-  for (const [x, y] of pairs) {
-    const cx = Math.floor(x);
-    const cy = Math.floor(y);
-    if (g.inBounds(cx, cy)) out.push(g.idx(cx, cy));
+  for (const i of candidates) {
+    if (marks[i] === gen) continue;
+    marks[i] = gen;
+    out.push(i);
   }
   return out;
 }

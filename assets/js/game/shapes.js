@@ -236,6 +236,27 @@ export function roundOffsets(brush) {
   return out;
 }
 
+/**
+ * One dab of the hard spray: a random scatter of cells inside the round
+ * brush's footprint. Density is the share of that footprint one dab inks, so
+ * a drag still fills the disc as its dabs overlap. The draw is fresh per dab -
+ * one fixed pattern stamped along a drag is a texture, not a spray - and `rng`
+ * is injectable so tests can pin a draw.
+ */
+export function sprayOffsets(brush, density, rng = Math.random) {
+  const disc = roundOffsets(brush);
+  const n = Math.max(1, Math.round(disc.length * density));
+  const pool = disc.slice();
+  const out = [];
+  for (let k = 0; k < n && pool.length; k++) {
+    const i = Math.floor(rng() * pool.length);
+    out.push(pool[i]);
+    pool[i] = pool[pool.length - 1];
+    pool.pop();
+  }
+  return out;
+}
+
 export const SHAPES = ['line', 'rect', 'ellipse', 'polygon'];
 
 /**

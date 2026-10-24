@@ -64,6 +64,7 @@ const state = {
   // room stores, so remote players just see the cells it paints.
   stamp: null,
   brushShape: 'square',
+  sprayDensity: 0.25,
   shapeFilled: false,
   fillGlobal: false,
   fillTolerance: 0,
@@ -112,6 +113,10 @@ const actions = {
       saveProfile({ ...loadProfile(), nick: state.nick, color: state.color, tip: null });
       ui.setTip(null);
     }
+    ui.setTool(state.tool);
+  },
+  setSprayDensity: (d) => {
+    state.sprayDensity = d;
     ui.setTool(state.tool);
   },
   /**

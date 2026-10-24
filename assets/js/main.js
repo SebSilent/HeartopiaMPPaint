@@ -73,6 +73,7 @@ const state = {
   groupIndex: null,
   roomPlayers: 1,
   roomLocked: false,
+  canDesign: true,
   designItem: null,
   designFamily: 'canvas',
   importMode: 'photo',
@@ -373,6 +374,7 @@ function wireRoom(r) {
 
   r.on('roster', (roster) => {
     state.roomPlayers = roster.length;
+    state.canDesign = r.isDesignHost;
     ui.setPlayers(roster, r.me.clientId);
     for (const p of roster) {
       if (!seenNicks.has(p.id)) {
@@ -407,6 +409,7 @@ function wireRoom(r) {
     state.item = item;
     state.designItem = item;
     state.designFamily = findItem(item)?.family || 'canvas';
+    syncBoardState(item);
     view.setFace(r.grid, r.design.active);
     view.fit();
     ui.setZoom(view.zoomPercent);
@@ -454,6 +457,9 @@ let lastStatus = '';
 function report(s) {
   if (s) lastStatus = s.status;
   const st = r2s();
+  // The design belongs to the room's longest-present player, so this can flip
+  // when someone leaves - recompute it on every status change, not just once.
+  state.canDesign = room ? room.isDesignHost : true;
   ui.setNet(st);
   ui.setLocked(!st.ready, st.ready ? '' : 'Waiting for the room…');
 }
@@ -979,8 +985,27 @@ function clearBoard() {
   refreshTrace();
 }
 
+/**
+ * Point the ratio/level pickers at the design the room actually has.
+ *
+ * They are what the design dialog pre-selects, so a stale pair makes the dialog
+ * open on the wrong size - and because "apply" is only enabled when the pick
+ * differs from the room design, a stale pair also offers to resize the room
+ * *back* to a size nobody asked for. Non-canvas designs leave them alone, so
+ * switching to a garment and back remembers the canvas you were on.
+ */
+function syncBoardState(itemId) {
+  const board = boardForItem(itemId);
+  if (!board) return;
+  state.ratio = board.ratio;
+  state.level = board.level;
+}
+
 function setItem(id) {
   if (!room || !room.canPaint) return;
+  // Ask the host question before the confirm, not after: a guest that says yes
+  // to "this wipes the board" and then watches nothing happen reads as a bug.
+  if (!room.isDesignHost) return ui.toast('Only the room host can change the design', 'warn');
   const item = findItem(id);
   if (!item) return;
   const warn = room.design.usedCells() > 0 ? `Switch to ${item.name}? This wipes the board for everyone.` : `Switch to ${item.name}?`;
@@ -989,6 +1014,7 @@ function setItem(id) {
   state.item = id;
   state.designItem = id;
   state.designFamily = item.family;
+  syncBoardState(id);
   undo.clear();
   ui.setUndoState(undo);
   view.setFace(room.grid, room.design.active);
@@ -998,13 +1024,27 @@ function setItem(id) {
 
 function setBoard(ratio, level) {
   if (!room || !room.canPaint) return;
+  if (!room.isDesignHost) return ui.toast('Only the room host can resize the board', 'warn');
   if (!confirm('Resize the board? Everything currently painted will be lost for everyone.')) return;
-  room.setBoard(ratio, level);
+  // setBoard goes through setItem, which refuses when we are not the design
+  // host - do not update local state for a resize the room never accepted.
+  if (!room.setBoard(ratio, level)) return;
   state.ratio = ratio;
   state.level = level;
   state.item = itemIdForBoard(ratio, level);
+  state.designItem = state.item;
+  state.designFamily = 'canvas';
+  syncBoardState(state.item);
+  // The old board is gone, so its patches are too: an undo left over from it
+  // would replay cells that no longer exist into the new grid.
+  undo.clear();
+  ui.setUndoState(undo);
   view.setFace(room.grid, room.design.active);
   applyOutline();
+  // The legend and the "cells left" count are sized from the board, so they are
+  // stale the moment it changes.
+  refreshTrace();
+  ui.toast(`Board resized to ${ratio} · ${LEVELS[level].tag}`, 'info');
 }
 
 function leaveRoom() {
@@ -1074,6 +1114,8 @@ function boot() {
   if (params.get('nick')) ui.el.nick.value = cleanNick(params.get('nick'));
   state.designItem = state.item;
   state.designFamily = findItem(state.item)?.family || 'canvas';
+  // ?item=canvas-16:9-2 has to open the dialog on 16:9 XL, not on the defaults.
+  syncBoardState(state.item);
   ui._join.item = state.item;
   ui._join.family = state.designFamily;
   ui._buildItemPick();

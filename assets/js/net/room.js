@@ -199,6 +199,39 @@ export class Room extends Emitter {
     return this.me.slot != null && this.status === 'online';
   }
 
+  /**
+   * Who owns the shared design: the longest-present player, i.e. the lowest
+   * slot. Slots are assigned once and survive reconnects, so every client
+   * derives the same answer from the roster it already has - no handshake, and
+   * the role passes on by itself when that player leaves.
+   *
+   * This is an ownership rule, not a security boundary: a modified client can
+   * still send whatever it likes. It stops the accident that actually bit us -
+   * a guest's picker silently resizing the room and wiping the picture.
+   */
+  get designHostId() {
+    let id = null;
+    let slot = Infinity;
+    for (const e of this._roster.values()) {
+      if (e.slot == null) continue;
+      if (e.slot < slot) {
+        slot = e.slot;
+        id = e.id;
+      }
+    }
+    return id;
+  }
+
+  /**
+   * True when this client may change the room's item or board size. Before the
+   * roster tells us who the host is (and in a solo/offline room) nobody is
+   * named, so we allow it rather than locking the only player out.
+   */
+  get isDesignHost() {
+    const host = this.designHostId;
+    return host == null || host === this.me.clientId;
+  }
+
   get stats() {
     return {
       transport: this.transport?.kind || CONFIG.transport,
@@ -311,6 +344,9 @@ export class Room extends Emitter {
   /** Switch the whole room to another Heartopia item. Destructive by design. */
   setItem(itemId) {
     if (!findItem(itemId)) return false;
+    // Refuse locally rather than apply a change the room will never agree
+    // with: a guest that resizes its own copy just desyncs itself.
+    if (!this.isDesignHost) return false;
     const seq = this.nextSeq();
     this.design.setItem(itemId);
     if (this.display) this.display.drop();
@@ -546,6 +582,12 @@ export class Room extends Emitter {
   _onDesign(msg, slot) {
     if (msg.from === this.me.clientId) return;
     if (!findItem(msg.item)) return;
+    // The design belongs to the room's longest-present player. Anyone else
+    // asking for a resize is ignored, so a guest cannot wipe the picture.
+    // If the roster has not named a host yet we cannot judge, so we accept and
+    // let the next snapshot correct us.
+    const host = this.designHostId;
+    if (host && msg.from !== host) return;
     this.design.setItem(msg.item);
     this.design.clearAll(msg.seq | 0, slot);
     if (this.display) this.display.drop();

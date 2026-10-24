@@ -67,6 +67,26 @@ class RelayRoom {
       .map(({ id, slot, nick, color, device }) => ({ id, slot, nick, color, device }));
   }
 
+  /**
+   * The longest-present member owns the shared design: the lowest slot.
+   *
+   * Slots are handed out once and survive reconnects, so this is stable, and
+   * the role passes on by itself when that member drops - no handover message,
+   * no window where nobody may resize. Clients derive the same answer from the
+   * roster they already receive, so the two never disagree.
+   */
+  designHostId() {
+    let id = null;
+    let slot = Infinity;
+    for (const m of this.members.values()) {
+      if (m.slot < slot) {
+        slot = m.slot;
+        id = m.id;
+      }
+    }
+    return id;
+  }
+
   snapshot() {
     return {
       k: 'welcome',
@@ -222,6 +242,14 @@ export function createServer(opts = {}) {
           const seq = Number(msg.seq) || 0;
           if (seq > room.lamport) room.lamport = seq;
           if (!findItem(msg.item)) return;
+          // Only the design host may resize the room. A guest that asks anyway
+          // is ignored and handed the real picture back, so a client that
+          // applied the change optimistically repairs itself instead of
+          // sitting there showing a design nobody else has.
+          if (me.id !== room.designHostId()) {
+            room.send(ws, { ...room.snapshot(), to: me.id, slot: me.slot });
+            return;
+          }
           room.itemId = msg.item;
           room.design.setItem(msg.item);
           room.design.clearAll(seq, me.slot);
@@ -233,6 +261,10 @@ export function createServer(opts = {}) {
           const seq = Number(msg.seq) || 0;
           if (seq > room.lamport) room.lamport = seq;
           if (!isValidRatio(msg.ratio)) return;
+          if (me.id !== room.designHostId()) {
+            room.send(ws, { ...room.snapshot(), to: me.id, slot: me.slot });
+            return;
+          }
           room.itemId = itemIdForBoard(msg.ratio, clampLevel(msg.level));
           room.design.setItem(room.itemId);
           room.design.clearAll(seq, me.slot);

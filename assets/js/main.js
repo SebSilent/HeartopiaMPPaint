@@ -271,7 +271,10 @@ function startRoom({ nick, color, device, room: code, ratio, level, item }) {
  * transport, so nothing leaves the page.
  */
 function startLocal() {
-  const room = new Room({ code: 'LOCAL', me: { clientId: CONFIG.clientId, nick: state.nick || 'alone', color: state.color, device: detectDevice() }, item: state.item });
+  // Assign the module-level room, do not shadow it: every action below (setItem,
+  // setBoard, the design dialog) guards on `room`, so a local `const` here left
+  // them all silently doing nothing in the offline sandbox.
+  room = new Room({ code: 'LOCAL', me: { clientId: CONFIG.clientId, nick: state.nick || 'alone', color: state.color, device: detectDevice() }, item: state.item });
   room.me.slot = 1;
   room.status = 'online';
   mount(room);

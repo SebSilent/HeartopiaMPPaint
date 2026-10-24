@@ -219,8 +219,10 @@ export function strokeCells(grid, x0, y0, x1, y1, brush) {
   const stamp = grid._stamp;
   for (let s = 0; s <= steps; s++) {
     const t = s / steps;
-    const cx = Math.round(x0 + (x1 - x0) * t);
-    const cy = Math.round(y0 + (y1 - y0) * t);
+    // floor, not round: the sample is a position, and it belongs to the cell it
+    // falls inside - cell n spans [n, n+1).
+    const cx = Math.floor(x0 + (x1 - x0) * t);
+    const cy = Math.floor(y0 + (y1 - y0) * t);
     for (const dy of offs) {
       for (const dx of offs) {
         const x = cx + dx;

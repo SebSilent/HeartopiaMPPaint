@@ -78,3 +78,15 @@ test('pool reads the strongest pixel of a cell', () => {
   assert.equal(pool(s, s.box, 0, 0, 2, 2), 200);
   assert.equal(pool(s, s.box, 1, 1, 2, 2), 10);
 });
+
+test('a tip is pooled once per size, not once per pointer move', () => {
+  // _paint asks for the footprint on every move; the pool scan over the whole
+  // art is the expensive part, so the second call must reuse the first.
+  const s = makeStamp(10, 10, solid(10, 10));
+  const first = stampOffsets(s, 5);
+  assert.ok(stampOffsets(s, 5) === first, 'same stamp, same size: same array');
+  assert.notEqual(stampOffsets(s, 7), first, 'a different size is a different footprint');
+  assert.notEqual(stampOffsets(makeStamp(10, 10, solid(10, 10)), 5), first, 'a re-imported tip is pooled fresh');
+  assert.deepEqual(stampOffsets(s, 5, 40), stampOffsets(s, 5, 40), 'the threshold is part of the key too');
+  assert.notEqual(stampOffsets(s, 5, 40), first, 'a different threshold does not hand back the other scan');
+});

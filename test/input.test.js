@@ -296,3 +296,91 @@ test('with no tip the same tap paints the built-in square', () => {
   assert.equal([...grid.color].filter((c) => c).length, 25, 'square 5x5');
   input.destroy();
 });
+
+test('a drag to a fractional cell paints what the drag to its floor paints', () => {
+  // Regression for the freeze while drawing: _paint handed lineCells the raw
+  // fractional move target, whose integer march could never equal it, so the
+  // 100000-cell guard ran on every move and the stroke smeared over the board.
+  // The target is floored now, so a fractional drag is the integer drag it
+  // lands on - same cells, and no smear.
+  const run = (mx, my) => {
+    const { input, grid } = makeInput({ state: { brush: 5, brushShape: 'round' } });
+    input.onDown(pe({ clientX: 2 * SCALE + 1, clientY: 2 * SCALE + 1 }));
+    input.onMove(pe({ clientX: mx, clientY: my }));
+    input.onUp(pe({ clientX: mx, clientY: my }));
+    const on = [];
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (grid.color[y * 10 + x]) on.push(x + ',' + y);
+    input.destroy();
+    return on;
+  };
+  const frac = run(7 * SCALE + 1.5, 5 * SCALE + 2.8); // cell (7.375, 5.7)
+  const whole = run(7 * SCALE, 5 * SCALE); // cell (7, 5)
+  assert.deepEqual(frac, whole, 'the fractional drag must land on the same cells');
+  assert.ok(frac.length >= 6 && frac.length < 80, `a short round line, not a smear: ${frac.length} cells`);
+});
+
+test('a shape drag to a fractional cell commits the shape its floor commits', () => {
+  // _move used to round the free end of a dragged shape: a line released at
+  // (7.375, 5.7) committed its far end at (8, 6) - a cell grown on each axis
+  // that the pointer never crossed. The free end is floored now, so the
+  // committed shape is the one the integer release would have drawn.
+  const run = (mx, my) => {
+    const { input, grid } = makeInput({ state: { tool: TOOLS.LINE } });
+    input.onDown(pe({ clientX: 2 * SCALE + 1, clientY: 2 * SCALE + 1 }));
+    input.onMove(pe({ clientX: mx, clientY: my }));
+    input.onUp(pe({ clientX: mx, clientY: my }));
+    const on = [];
+    for (let y = 0; y < 10; y++) for (let x = 0; x < 10; x++) if (grid.color[y * 10 + x]) on.push(x + ',' + y);
+    input.destroy();
+    return on;
+  };
+  const frac = run(7 * SCALE + 1.5, 5 * SCALE + 2.8); // cell (7.375, 5.7)
+  const whole = run(7 * SCALE, 5 * SCALE); // cell (7, 5)
+  assert.deepEqual(frac, whole, 'the fractional release must commit the floored shape');
+  assert.ok(frac.includes('7,5'), 'the line reaches the cell the pointer was in');
+  assert.ok(!frac.includes('8,6'), 'the line did not grow a cell on release');
+});
+
+// drawPreview renders onto a canvas; a recording stub stands in for one.
+const fakeCtx = () => {
+  const calls = [];
+  const rec = (name) => (...args) => calls.push([name, ...args]);
+  return {
+    calls,
+    save: rec('save'),
+    restore: rec('restore'),
+    beginPath: rec('beginPath'),
+    moveTo: rec('moveTo'),
+    lineTo: rec('lineTo'),
+    stroke: rec('stroke'),
+    fillRect: rec('fillRect'),
+    strokeRect: rec('strokeRect'),
+    setLineDash: rec('setLineDash'),
+  };
+};
+
+test('the polygon rubber line ends on the cell the next click would add', () => {
+  // The rubber line used to end at round(hover): hovering at (7.375, 5.7)
+  // previewed an endpoint in cell (8, 6) while the click would add (7, 5).
+  const { input, view } = makeInput({ state: { tool: TOOLS.POLYGON } });
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE })); // vertex (2,2)
+  input.onDown(pe({ clientX: 9 * SCALE, clientY: 3 * SCALE })); // vertex (9,3)
+  input.onMove(pe({ clientX: 7 * SCALE + 1.5, clientY: 5 * SCALE + 2.8 })); // hover (7.375, 5.7)
+  const ctx = fakeCtx();
+  input.drawPreview(ctx, view);
+  const lines = ctx.calls.filter((c) => c[0] === 'lineTo').map((c) => c.slice(1));
+  assert.deepEqual(lines[lines.length - 1], [28, 20], 'rubber line ends at toScreen(7, 5)');
+  input.destroy();
+});
+
+test('the brush footprint box previews the cells a stroke would paint', () => {
+  // brushBox used to round the hover cell: at (7.375, 5.7) the box sat over
+  // cells 7..9 x 5..7 while a stroke there paints 6..8 x 4..6.
+  const { input, view } = makeInput({ state: { brush: 3 } });
+  input.onMove(pe({ clientX: 7 * SCALE + 1.5, clientY: 5 * SCALE + 2.8 })); // hover (7.375, 5.7)
+  const ctx = fakeCtx();
+  input.drawPreview(ctx, view);
+  const rects = ctx.calls.filter((c) => c[0] === 'strokeRect').map((c) => c.slice(1));
+  assert.deepEqual(rects, [[24.5, 16.5, 12, 12]], 'box over cells 6..8 x 4..6');
+  input.destroy();
+});

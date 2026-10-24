@@ -343,8 +343,10 @@ export class Input {
 
     const sh = this.shapes.get(pid);
     if (sh) {
-      sh.x1 = Math.round(cell.x);
-      sh.y1 = Math.round(cell.y);
+      // floor, not round: _start floored the anchor, so the free end has to
+      // speak the same language or a drag can grow a cell on release.
+      sh.x1 = Math.floor(cell.x);
+      sh.y1 = Math.floor(cell.y);
       this.view.markDirty();
       if (type === 'mouse') this.hover = cell;
       return;
@@ -407,20 +409,16 @@ export class Input {
     const st = this.getState();
     const g = this._grid;
     let base;
-    // An imported tip wins over the square/round switch: it is the more specific
-    // thing the player asked for. Both share the stamping below, because a tip
-    // dragged across the board has to stay continuous exactly like a round brush.
-    const offs = st.stamp && st.brush > 1 ? stampOffsets(st.stamp, st.brush) : null;
-    if (offs || (st.brushShape === 'round' && st.brush > 1)) {
+    const cells = dabOffsets(st);
+    if (cells) {
       const pairs = [];
       const seeds = [[x1, y1]];
       if (Math.hypot(x1 - x0, y1 - y0) > 0.5) seeds.push(...shapeCells('line', x0, y0, x1, y1, false));
-      const cells = offs || roundOffsets(st.brush);
       for (const [sx, sy] of seeds) {
         // roundOffsets and stampOffsets both hand back [dx, dy]. The destructure
         // here used to say [dy, dx] and got away with it only because a circle is
         // symmetric - a tip is not.
-        for (const [dx, dy] of cells) pairs.push([Math.round(sx) + dx, Math.round(sy) + dy]);
+        for (const [dx, dy] of cells) pairs.push([Math.floor(sx) + dx, Math.floor(sy) + dy]);
       }
       base = inBoundsPairs(g, dedupePairs(pairs));
     } else {
@@ -621,7 +619,9 @@ export class Input {
         else ctx.lineTo(p.x, p.y);
       });
       if (this.hover) {
-        const p = view.toScreen(Math.round(this.hover.x), Math.round(this.hover.y));
+        // floor, not round: _start floors the vertices it records, so the
+        // rubber line has to end on the same cell a click would add.
+        const p = view.toScreen(Math.floor(this.hover.x), Math.floor(this.hover.y));
         ctx.lineTo(p.x, p.y);
       }
       ctx.stroke();
@@ -673,6 +673,19 @@ export class Input {
 }
 
 /** [x,y] pairs -> flat indices, dropping anything off the board. */
+/**
+ * The cells one dab of the current brush covers, as [dx, dy] offsets centred on
+ * the seed cell, or null when the brush is a plain square stroke. An imported
+ * tip wins over the square/round switch: it is the more specific thing the
+ * player asked for. Both share this, because a tip dragged across the board has
+ * to stay continuous exactly like a round brush.
+ */
+function dabOffsets(st) {
+  if (st.stamp && st.brush > 1) return stampOffsets(st.stamp, st.brush);
+  if (st.brushShape === 'round' && st.brush > 1) return roundOffsets(st.brush);
+  return null;
+}
+
 function inBoundsPairs(g, pairs) {
   const out = [];
   for (const [x, y] of pairs) {
@@ -685,7 +698,9 @@ function inBoundsPairs(g, pairs) {
 
 function brushBox(view, cell, brush) {
   const half = (brush - 1) / 2;
-  const p = view.toScreen(Math.round(cell.x) - half, Math.round(cell.y) - half);
+  // floor, not round: the box previews the cells a stroke would paint, and
+  // those are seeded from Math.floor(cell) in _paint.
+  const p = view.toScreen(Math.floor(cell.x) - half, Math.floor(cell.y) - half);
   return { x: p.x, y: p.y, w: brush * view.scale, h: brush * view.scale };
 }
 

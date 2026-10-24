@@ -85,6 +85,10 @@ export class Room extends Emitter {
     this._slotCounter = 1;
     this._timers = [];
     this._lastHdr = 0;
+    // Newest op seq we have successfully handed to the wire on this connection.
+    // A snapshot older than this cannot contain that op, so adopting it would
+    // un-do a write the room has already accepted (see _onSnapshot).
+    this._sentSeq = 0;
   }
 
   /* ------------------------- the board, as read by the view ------------------------- */
@@ -151,6 +155,13 @@ export class Room extends Emitter {
   _onTransportStatus(s, detail) {
     this.status = s;
     this.detail = detail || '';
+    if (s !== 'online') {
+      // Ops handed to a socket that then died are unknowable - they may or may
+      // not have reached the room. Stop refusing snapshots so the next one (a
+      // reconnect's welcome, a sync answer) can always pull us back to the
+      // wire's picture, as it always could.
+      this._sentSeq = 0;
+    }
     if (s === 'online') {
       // Announce ourselves; the authority answers with our slot + the picture.
       this._send({ k: 'hello', nick: this.me.nick, color: this.me.color, device: this.me.device });
@@ -251,7 +262,9 @@ export class Room extends Emitter {
   _send(obj) {
     if (!this.transport) return 0;
     const msg = { ...obj, from: this.me.clientId, slot: this.me.slot, ts: Date.now() };
-    return this.transport.send(msg);
+    const sent = this.transport.send(msg);
+    if (sent && typeof obj.seq === 'number' && obj.seq > this._sentSeq) this._sentSeq = obj.seq;
+    return sent;
   }
 
   /** Take a stamp for a new stroke. One stamp per stroke, reused by its batches. */
@@ -616,8 +629,18 @@ export class Room extends Emitter {
 
   _onSnapshot(msg) {
     try {
+      const s = typeof msg.seq === 'number' ? msg.seq : 0;
+      if (s < this._sentSeq) {
+        // This snapshot predates an op we already put on the wire, so it cannot
+        // contain that op: adopting it would un-do a write the room has already
+        // accepted. The join handshake's answers can still be in flight when
+        // the first local strokes go out (the fan-out race in relay.test.js),
+        // and the next hdr/sync cycle carries the merged picture - so drop
+        // this one quietly. Not a 'sync' failure: nothing is malformed here.
+        return;
+      }
       this.design.applySnapshot(msg);
-      if (typeof msg.seq === 'number' && msg.seq > this.lamport) this.lamport = msg.seq;
+      if (s > this.lamport) this.lamport = s;
       // A snapshot is the whole truth: the screen stops animating and matches it.
       if (this.display) this.display.drop();
       this.emit('grid', { local: false, snapshot: true, resized: true });

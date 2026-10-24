@@ -134,6 +134,8 @@ export class Input {
     add(
       'wheel',
       (e) => {
+        // Scrolling over a panel is the panel's business, not the board's.
+        if (e.target !== this.view.base && e.target !== this.view.fx) return;
         e.preventDefault();
         const st = this.getState();
         if (e.ctrlKey || e.metaKey) {
@@ -213,6 +215,10 @@ export class Input {
   /* ---------- flow ---------- */
 
   onDown(e) {
+    // The panels, help card and zoom row are children of #stage, the element
+    // these listeners sit on. A pointerdown on them must not start a stroke
+    // behind the window, so only the two canvases may begin one.
+    if (e.target !== this.view.base && e.target !== this.view.fx) return;
     e.preventDefault();
     this.view.measure();
     const pid = e.pointerId;

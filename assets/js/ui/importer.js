@@ -38,6 +38,52 @@ export function loadImage(src) {
 }
 
 /**
+ * Where the source image lands in the target box, in target pixels.
+ *
+ * The preview that lets you drag a picture around has to draw it in exactly the
+ * place `rasterize` will sample, so the two share this one rect instead of each
+ * working out the fit arithmetic on its own.
+ *
+ * `rot` turns the picture before it is placed, in quarter degrees, because a
+ * phone photo is sideways more often than not and cropping it back is a chore.
+ * A quarter turn swaps which of the source's edges faces the target's width, so
+ * the fit is measured against the *turned* box - `sw`/`sh` stay the box the
+ * picture occupies in target space, and `dw`/`dh` are the size to hand
+ * `drawImage` after the context has been rotated.
+ *
+ * @param {number} zoom  1 = fill the target box
+ * @param {number} ox/oy -0.5..0.5 pan, in fractions of the target
+ * @param {number} rot   0/90/180/270 degrees, clockwise
+ */
+export function fitRect(img, w, h, o = {}) {
+  const fit = o.fit || 'cover';
+  const scale = o.zoom ?? 1;
+  // Normalised here rather than trusted from a <select>, whose values are
+  // strings, so every caller gets a number without repeating the parse.
+  const rot = ((Math.round(Number(o.rot) || 0) % 360) + 360) % 360;
+  const quarter = rot === 90 || rot === 270;
+  // What has to fit the target is the box the picture occupies *after* the turn.
+  const bw = quarter ? img.height : img.width;
+  const bh = quarter ? img.width : img.height;
+  let k;
+  if (fit === 'stretch') k = 1;
+  else k = fit === 'cover' ? Math.max(w / bw, h / bh) : Math.min(w / bw, h / bh);
+  const dw = img.width * k * scale;
+  const dh = img.height * k * scale;
+  const sw = quarter ? dh : dw;
+  const sh = quarter ? dw : dh;
+  return {
+    dx: (w - sw) / 2 + (o.ox || 0) * w,
+    dy: (h - sh) / 2 + (o.oy || 0) * h,
+    sw,
+    sh,
+    rot,
+    dw,
+    dh,
+  };
+}
+
+/**
  * Draw an image into a w x h pixel buffer, cropped and scaled.
  * @param {number} zoom  1 = fill the target box
  * @param {number} ox/oy -0.5..0.5 pan, in fractions of the target
@@ -51,17 +97,21 @@ export function rasterize(img, w, h, o = {}) {
   ctx.fillRect(0, 0, w, h);
   const fit = o.fit || 'cover';
   const scale = o.zoom ?? 1;
-  let sw = img.width;
-  let sh = img.height;
-  let k;
-  if (fit === 'stretch') k = 1;
-  else k = fit === 'cover' ? Math.max(w / sw, h / sh) : Math.min(w / sw, h / sh);
-  sw *= k * scale;
-  sh *= k * scale;
-  const dx = (w - sw) / 2 + (o.ox || 0) * w;
-  const dy = (h - sh) / 2 + (o.oy || 0) * h;
+  const { dx, dy, sw, sh, rot, dw, dh } = fitRect(img, w, h, o);
   ctx.imageSmoothingEnabled = fit !== 'stretch' || scale === 1;
-  ctx.drawImage(img, dx, dy, sw, sh);
+  if (!rot) {
+    ctx.drawImage(img, dx, dy, sw, sh);
+  } else {
+    // Rotate about the centre of the box the picture is meant to occupy. The
+    // context turns, the picture is drawn at its own un-turned size centred on
+    // the origin, and what lands on the target is the turned bounding box -
+    // which is exactly the `sw`/`sh` fitRect measured.
+    ctx.save();
+    ctx.translate(dx + sw / 2, dy + sh / 2);
+    ctx.rotate((rot * Math.PI) / 180);
+    ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+    ctx.restore();
+  }
   // The pixel array, not the ImageData wrapper: `quantize` and the detector
   // both index `data` numerically, and an ImageData object reads `undefined`
   // for every pixel - which does not throw, it quietly returns one flat shade.

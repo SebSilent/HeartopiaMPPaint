@@ -15,9 +15,11 @@ globalThis.window = globalThis.window || {};
 globalThis.window.PointerEvent = function PointerEvent() {};
 
 import { Grid } from '../assets/js/game/grid.js';
+import { FLAT_COLORS } from '../assets/js/data/heartopia-palette.js';
 import { SingleFaceDesign } from '../assets/js/game/design.js';
 import { History, patchWrite } from '../assets/js/game/history.js';
 import { Input, TOOLS, paintColorFor } from '../assets/js/input.js';
+import { fadeShade, FADE_STEPS } from '../assets/js/color/science.js';
 
 const SCALE = 4;
 
@@ -484,6 +486,80 @@ test('a mirrored spray paints each dab and its reflection', () => {
   input.destroy();
 });
 
+test('an airbrush dab fades from the aimed shade at its centre outward', () => {
+  // Density 1 drains the scatter pool, so the dab lays the whole disc and the
+  // tone of every cell is pinned by distance rather than by the draw: this
+  // tests the ramp, not the rng.
+  const { input, grid } = makeInput({ state: { brush: 5, brushShape: 'air', sprayDensity: 1 } });
+  input.onDown(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE })); // cell (5, 5)
+  input.onUp(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+
+  const row = [16];
+  for (let k = 1; k <= FADE_STEPS; k++) row.push(fadeShade(16, k));
+  for (const [dx, dy] of roundOffsets(5)) {
+    const step = Math.min(FADE_STEPS, Math.floor((Math.hypot(dx, dy) / 2.5) * FADE_STEPS));
+    assert.equal(
+      grid.color[(5 + dy) * 10 + (5 + dx)],
+      row[step],
+      `offset (${dx}, ${dy}) is tone ${step} of the fade`
+    );
+  }
+  assert.equal(grid.color[55], 16, 'the centre keeps the shade it aimed with');
+  input.destroy();
+});
+
+test('an airbrush stroke sends one op per tone', () => {
+  // The wire carries a single colour per op, so a stroke that lays four tones
+  // arrives as several ops. One op in the aimed shade would be a hard brush
+  // with holes in it, which is the thing the airbrush is meant to not be.
+  const { input, room } = makeInput({ state: { brush: 5, brushShape: 'air', sprayDensity: 1 } });
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE }));
+  for (let x = 2; x < 38; x += 3) input.onMove(pe({ clientX: x * SCALE, clientY: 2 * SCALE }));
+  input.onUp(pe({ clientX: 38 * SCALE, clientY: 2 * SCALE }));
+
+  const all = room.ops.flatMap((o) => o.cells);
+  assert.equal(new Set(all).size, all.length, 'no cell is sent twice in one stroke');
+  const tones = new Set(room.ops.map((o) => o.color));
+  assert.ok(tones.size >= 2, `expected several tones, got ${[...tones]}`);
+  const row = new Set([16, ...Array.from({ length: FADE_STEPS }, (_, k) => fadeShade(16, k + 1))]);
+  for (const o of room.ops) {
+    assert.ok(row.has(o.color), `tone ${o.color} is a fade of the aimed shade`);
+    assert.ok(o.color > 0, 'no op paints the empty entry');
+  }
+  input.destroy();
+});
+
+test('a mirrored airbrush fades each side from its own centre', () => {
+  // The mirror runs on flat indices after the scatter, so the tone has to be
+  // measured from the mirrored centre as well: a reflection that faded away
+  // from the far side of the board would come out uniformly pale.
+  const { input, grid } = makeInput({
+    state: { brush: 5, brushShape: 'air', sprayDensity: 1, mirror: 1 },
+  });
+  input.onDown(pe({ clientX: 1 * SCALE, clientY: 5 * SCALE })); // cell (1, 5)
+  input.onUp(pe({ clientX: 1 * SCALE, clientY: 5 * SCALE }));
+
+  assert.equal(grid.color[5 * 10 + 1], 16, 'the aimed centre keeps the shade');
+  assert.equal(grid.color[5 * 10 + 8], 16, 'the mirrored centre keeps it too');
+  input.destroy();
+});
+
+test('the airbrush previews the disc it scatters inside', () => {
+  // Same footprint as the spray, so the same preview. The tone ramp is a
+  // property of the dots that land, not of the disc that is aimed.
+  const { input, view } = makeInput({ state: { brush: 3, brushShape: 'air' } });
+  input.onMove(pe({ clientX: 7 * SCALE + 1.5, clientY: 5 * SCALE + 2.8 })); // hover (7.375, 5.7)
+  const ctx = fakeCtx();
+  input.drawPreview(ctx, view);
+  const fills = ctx.calls.filter((c) => c[0] === 'fillRect').map((c) => c.slice(1));
+  assert.deepEqual(
+    fills.map((r) => r.join(',')).sort(),
+    ['24,20,4,4', '28,16,4,4', '28,24,4,4', '32,20,4,4'],
+    'the same rim the spray previews'
+  );
+  input.destroy();
+});
+
 test('a spray previews the disc it scatters inside', () => {
   // The scatter is random per dab, so the preview must hug the disc, not one
   // draw of it: whatever cells one dab happens to ink, the next dab breaks.
@@ -661,6 +737,71 @@ test('a finished stroke leaves one undo step, and undoing it restores the board'
   const seq = room.nextSeq();
   for (const [c, list] of byColor) room.paintLocal(list, c, seq, entry.face);
   assert.ok([...grid.color].every((c) => c === 0), 'the board is blank again');
+  input.destroy();
+});
+
+// "Fill similar" matches on colour, not on palette position. These three use
+// real shades from the shipped palette, looked up by hex so a reorder tells us
+// rather than quietly changing what the test means.
+const DARK_RED = FLAT_COLORS.indexOf('#682f39');
+const PALE_PINK = FLAT_COLORS.indexOf('#e7d5d5');
+const PALE_LILAC = FLAT_COLORS.indexOf('#e4d5da');
+
+test('a loose bucket groups shades that look alike and ignores the neighbour in the list', () => {
+  assert.ok(DARK_RED > 0 && PALE_PINK > 0 && PALE_LILAC > 0, 'the three shades are still in the palette');
+  const { input, grid } = makeInput({ grid: [4, 2], state: { tool: TOOLS.FILL, fillTolerance: 12 } });
+  grid.paint([0], DARK_RED, 0, 2); // (0,0) - next to the pink, but nothing like it
+  grid.paint([1, 2, 3], PALE_PINK, 0, 2); // (1,0)..(3,0)
+  grid.paint([5], PALE_LILAC, 0, 2); // (1,1) - 110 places away in the list, same colour to the eye
+
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 0 * SCALE + 1 }));
+  input.onUp(pe({ clientX: 2 * SCALE, clientY: 0 * SCALE + 1 }));
+
+  assert.equal(grid.color[1], 16, 'the pink the pointer landed on is filled');
+  assert.equal(grid.color[3], 16, 'and the rest of its own region');
+  assert.equal(grid.color[5], 16, 'the near-identical lilac joins it - an index tolerance could never reach 123 from 13');
+  assert.equal(grid.color[0], DARK_RED, 'the dark red does NOT: it is adjacent in the list, 56 apart in colour');
+  input.destroy();
+});
+
+test('an exact bucket stays with the shade under the pointer', () => {
+  const { input, grid } = makeInput({ grid: [4, 2], state: { tool: TOOLS.FILL, fillTolerance: 0 } });
+  grid.paint([1, 2, 3], PALE_PINK, 0, 2);
+  grid.paint([5], PALE_LILAC, 0, 2);
+
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 1 }));
+  input.onUp(pe({ clientX: 2 * SCALE, clientY: 1 }));
+
+  assert.equal(grid.color[2], 16);
+  assert.equal(grid.color[5], PALE_LILAC, 'exact means exact, however close the neighbour looks');
+  input.destroy();
+});
+
+test('a tolerant fill that lands on empty space fills empty, and only empty', () => {
+  // Filling a blank region is correct bucket behaviour. What must not happen is
+  // the loose bucket treating "no paint" as a colour close to everything and
+  // stealing a neighbour's shade on the way through - `0` is a number, and
+  // abs(0 - 0) <= tol holds for every tol.
+  const { input, grid } = makeInput({ grid: [6, 6], state: { tool: TOOLS.FILL, fillTolerance: 12 } });
+  grid.paint([grid.idx(3, 3)], DARK_RED, 0, 2); // inside the region the click will flood
+
+  input.onDown(pe({ clientX: 0 * SCALE + 1, clientY: 0 * SCALE + 1 }));
+  input.onUp(pe({ clientX: 0 * SCALE + 1, clientY: 0 * SCALE + 1 }));
+
+  assert.equal(grid.color[grid.idx(0, 0)], 16, 'the blank cell the pointer landed on fills');
+  assert.equal(grid.color[grid.idx(5, 5)], 16, 'and the blank region it is part of');
+  assert.equal(grid.color[grid.idx(3, 3)], DARK_RED, 'the dark red in the middle of it does not: it is not empty, and it is not the colour we clicked');
+  input.destroy();
+});
+
+test('a tolerant fill does not leak from a shade into the empty cells around it', () => {
+  const { input, grid } = makeInput({ grid: [6, 6], state: { tool: TOOLS.FILL, fillTolerance: 12 } });
+  grid.paint([grid.idx(2, 2)], PALE_PINK, 0, 2);
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE }));
+  input.onUp(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE }));
+
+  assert.equal(grid.color[grid.idx(2, 2)], 16, 'the one cell it was asked to fill');
+  assert.equal([...grid.color].filter((c) => c === 16).length, 1, 'and nothing else');
   input.destroy();
 });
 

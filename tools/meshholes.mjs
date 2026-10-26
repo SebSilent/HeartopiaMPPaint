@@ -161,7 +161,10 @@ const measure = async () =>
 const angles = [];
 for (let i = 0; i < 6; i++) {
   const m = await measure();
-  if (m.borderFrac < 0.8) throw new Error(`preview is not showing the backdrop (${(m.borderFrac * 100).toFixed(0)}% of the border): the canvas is empty or unsized, so any hole count here would be meaningless`);
+  // The guard is against an empty canvas, which reads as 0% backdrop because it
+  // is transparent black. 0.8 was wrong for a garment that fills the frame - the
+  // bucket covers a fifth of the border with cloth and was refused a measurement.
+  if (m.borderFrac < 0.1) throw new Error(`preview is not showing the backdrop (${(m.borderFrac * 100).toFixed(0)}% of the border): the canvas is empty or unsized, so any hole count here would be meaningless`);
   if (m.garment < 2000) throw new Error(`only ${m.garment} non-backdrop pixels: nothing was rendered`);
   angles.push(m);
   // Orbit by dragging on the preview, so the angles are the ones a player sees.

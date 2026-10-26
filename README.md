@@ -12,9 +12,16 @@ Pick a nickname, get a room code, send it to people. Everyone paints at once, li
   yellow, green, cyan, blue, purple, pink, special
 - **Every board size the game allows**
 - **Everyone's cursor on the board**, drawn as a touch, a pen or a mouse, moving in real time
+- **A chip on every avatar showing the shade that player is holding**, with the group code and hex on
+  hover, so a room painting in four blues can tell who is who
+- **Your board is kept on your device**, and if the room comes back empty it asks before it touches
+  anything - decline and your picture is still there next time
 - **Pinch to zoom, two fingers to pan**, so you can rest your hand on the screen
 - **Apple Pencil aware**: touches stop painting while the pen is down
-- **Eyedropper, eraser, four brush sizes**
+- **Eyedropper, eraser, four brush sizes**, and four brush shapes: square, round, the hard spray, and a
+  soft **airbrush** that fades through real palette shades, because a Heartopia board has no alpha
+- **Fill, fill-similar, line, rectangle, ellipse, polygon, mirror painting** - each one a single undo
+  step, each one broadcast as one op
 - **PNG export at the board's exact pixel size**, ready to copy into the game
 - **The game's own items**, clothing, furniture and the book, on their real faces at their real sizes
 - **Game silhouettes enforced**, the cells Heartopia refuses to paint stay unpaintable for everyone in the room,

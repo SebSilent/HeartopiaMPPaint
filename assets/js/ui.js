@@ -115,6 +115,7 @@ export class UI {
       faces: document.getElementById('faces'),
       groups: document.getElementById('groups'),
       swatches: document.getElementById('swatches'),
+      recent: document.getElementById('recent'),
       brushes: document.getElementById('brushes'),
     tipBtn: document.getElementById('tipBtn'),
     tipFile: document.getElementById('tipFile'),
@@ -368,6 +369,14 @@ export class UI {
       if (!b) return;
       this.actions.setColor(Number(b.dataset.idx));
     });
+    // The recent row is rebuilt on every shade change, so the listener has to sit
+    // on the container - the same reason the swatch row's does.
+    if (e.recent)
+      e.recent.addEventListener('click', (ev) => {
+        const b = ev.target.closest('.recent-sw');
+        if (!b) return;
+        this.actions.setColor(Number(b.dataset.idx));
+      });
   }
 
   /** The row under the tools: only the options that apply to the live tool. */
@@ -565,7 +574,12 @@ export class UI {
     e.current.style.color = readableInk(hex);
   }
 
-  setColorIdx(idx) {
+  /**
+   * @param {boolean} remember  put this shade in the recent row. False for the
+   *   starting shade, which the player never chose - a row that opens with a
+   *   default is a row that lies about what they have been using.
+   */
+  setColorIdx(idx, remember = true) {
     this.state.colorIdx = idx;
     this.state.colorHex = FLAT_COLORS[idx] || '#ffffff';
     // Follow the shade only when the shade is what changed (a pick, an
@@ -573,6 +587,44 @@ export class UI {
     const g = groupForIndex(idx);
     if (this.state.groupIndex === null || g !== this.state.groupIndex) this.showGroup(g);
     else if (this.el.swatches.children.length) this._syncSwatch();
+    // One hook, because every way a shade changes - a swatch click, an
+    // eyedropper, an Alt-drag, a restore - comes through here. Recording it in
+    // the click handler instead would mean the picks never become recent, which
+    // is backwards: a pick is the clearest sign of a shade you keep coming back
+    // to. Empty (0) is dropped by the store, not here.
+    // Optional all the way down: a UI built without actions is a supported shape
+    // here (test/palette-ui.test.js does exactly that), so neither the object nor
+    // the method may be assumed.
+    if (remember) this.actions?.rememberShade?.(idx);
+  }
+
+  /**
+   * The recent row: the last few shades this player reached for, newest first.
+   * Drawn from scratch because it is at most eight nodes, and a diff that has to
+   * work out which swatch moved is more code than the row is worth.
+   */
+  setRecent(list) {
+    const e = this.el;
+    if (!e.recent) return;
+    const arr = Array.isArray(list) ? list : [];
+    if (!arr.length) {
+      e.recent.innerHTML = '';
+      return;
+    }
+    const chips = arr
+      .map((idx) => {
+        const hex = FLAT_COLORS[idx] || '#ffffff';
+        const code = COLOR_CODES[idx] || '';
+        // The same control as a palette swatch, not a lookalike: it is the same
+        // affordance, and a person should not have to learn a second target.
+        const on = idx === this.state.colorIdx ? ' active' : '';
+        return (
+          `<button class="swatch recent-sw${on}" data-idx="${idx}" style="--c:${hex}" ` +
+          `title="${code} ${hex}" aria-label="Recent colour ${code || idx}"></button>`
+        );
+      })
+      .join('');
+    e.recent.innerHTML = `<span class="recent-label">Recent</span><div class="recent-row">${chips}</div>`;
   }
 
   setTool(tool) {

@@ -58,6 +58,13 @@ const BTN = { tracePanel: 'btnTrace', importPanel: 'btnImport', d3Panel: 'btn3d'
 /** Tools that drag out a shape, and so own the filled/hollow switch. */
 const DRAG_TOOLS = ['line', 'rect', 'ellipse'];
 
+/**
+ * Import controls kept as fractions in state and shown as percentages.
+ * Dragging the preview writes these directly, and the sliders have to agree
+ * with it, so the conversion lives in one place on each side.
+ */
+const PLACEMENT = new Set(['zoom', 'ox', 'oy']);
+
 const TOOL_DEFS = [
   ['brush', 'Brush', 'B'],
   ['eraser', 'Eraser', 'E'],
@@ -370,10 +377,11 @@ export class UI {
           ['square', 'Square', 'Hard-edged, like the game'],
           ['round', 'Round', 'Round brush footprint'],
           ['spray', 'Spray', 'Scattered dabs inside the round brush'],
+          ['air', 'Airbrush', 'Scattered dots that fade outward'],
         ], st.brushShape),
         'shape'
       );
-      if (st.brushShape === 'spray') {
+      if (st.brushShape === 'spray' || st.brushShape === 'air') {
         html += row(
           'Density',
           chips('density', [
@@ -404,6 +412,18 @@ export class UI {
         ], st.fillGlobal ? 'all' : 'area'),
         'fillscope'
       );
+      // How wide a "same colour" is allowed to be. Steps are ΔE(2000) and named
+      // the way a person judges it: 6 is the same colour under a different
+      // light, 12 starts picking up neighbours that only rhyme.
+      html += row(
+        'Matches',
+        chips('fillmatch', [
+          ['0', 'Exact', 'Only this shade'],
+          ['6', 'Close', 'Shades that look the same'],
+          ['12', 'Broad', 'Shades that nearly match'],
+        ], String(st.fillTolerance | 0)),
+        'fillmatch'
+      );
     }
     html += row(
       'Mirror',
@@ -424,6 +444,8 @@ export class UI {
       b.classList.toggle('active', (b.dataset.fillmode === 'filled') === !!st.shapeFilled);
     for (const b of e.toolOpts.querySelectorAll('[data-fillscope]'))
       b.classList.toggle('active', (b.dataset.fillscope === 'all') === !!st.fillGlobal);
+    for (const b of e.toolOpts.querySelectorAll('[data-fillmatch]'))
+      b.classList.toggle('active', Number(b.dataset.fillmatch) === (st.fillTolerance | 0));
     for (const b of e.toolOpts.querySelectorAll('[data-mirror]'))
       b.classList.toggle('active', b.dataset.mirror === ['off', 'x', 'y', 'xy'][st.mirror || 0]);
   }
@@ -431,11 +453,16 @@ export class UI {
   _wireToolOptions() {
     const e = this.el;
     e.toolOpts.addEventListener('click', (ev) => {
-      const b = ev.target.closest('button[data-shape],button[data-density],button[data-fillmode],button[data-fillscope],button[data-mirror]');
+      const b = ev.target.closest(
+        'button[data-shape],button[data-density],button[data-fillmode],button[data-fillscope],button[data-fillmatch],button[data-mirror]'
+      );
       if (!b) return;
       if (b.dataset.shape) this.actions.setBrushShape(b.dataset.shape);
       if (b.dataset.density) this.actions.setSprayDensity(Number(b.dataset.density));
       if (b.dataset.fillmode) this.actions.setShapeFilled(b.dataset.fillmode === 'filled');
+      // Presence, not truthiness: '0' is a real choice (Exact), and a truthy
+      // test would make clicking Exact do nothing.
+      if (b.dataset.fillmatch !== undefined) this.actions.setFillTolerance(Number(b.dataset.fillmatch));
       if (b.dataset.fillscope) this.actions.setFillGlobal(b.dataset.fillscope === 'all');
       if (b.dataset.mirror) this.actions.setMirror(['off', 'x', 'y', 'xy'].indexOf(b.dataset.mirror));
     });
@@ -612,6 +639,38 @@ export class UI {
     if (id === 'd3Panel') this.actions.close3d();
   }
 
+  /**
+   * Grey the 3D button out when the current item has nothing to show in 3D.
+   *
+   * A dead button that opens an empty panel teaches people the button is a lie,
+   * so it says why it is off instead, and an open panel is closed rather than
+   * left showing the previous item's solid.
+   */
+  set3DAvailable(ok, why) {
+    const btn = document.getElementById('btn3d');
+    if (!btn) return;
+    btn.disabled = !ok;
+    btn.title = ok ? 'Preview this item in 3D' : why || 'This item has no 3D model';
+    if (!ok && this.el.d3Panel && !this.el.d3Panel.hidden) this.hidePanel('d3Panel');
+  }
+
+  /**
+   * Name the kind of preview, so a flat layout is never mistaken for a model.
+   * @param {'mesh'|'solid'|'panels'|null} source
+   */
+  set3DKind(source) {
+    const el = document.getElementById('d3Kind');
+    if (!el) return;
+    const KIND = {
+      mesh: ['real 3D model', ''],
+      solid: ['3D model', ''],
+      panels: ['flat layout - this item has no 3D model', 'is-flat'],
+    };
+    const [text, cls] = KIND[source] || ['nothing to show', 'is-flat'];
+    el.textContent = text;
+    el.className = `kind${cls ? ' ' + cls : ''}`;
+  }
+
   /* ---------------- trace panel ---------------- */
 
   _buildTrace() {
@@ -739,6 +798,15 @@ export class UI {
     const rows = [];
     if (photo) {
       rows.push(['fit', 'Fit', 'select', ['cover', 'contain', 'stretch']]);
+      // Placement first: it is what you drag on the preview, and the sliders are
+      // the touch-friendly way to set the same three numbers precisely.
+      rows.push(['zoom', 'Scale', 'range', [20, 400, 5, 100]]);
+      rows.push(['ox', 'Move X', 'range', [-100, 100, 1, 0]]);
+      rows.push(['oy', 'Move Y', 'range', [-100, 100, 1, 0]]);
+      // Turn lives with placement, not with colour: it moves the same picture
+      // around the same face, and a sideways phone photo is the commonest reason
+      // the auto-fit is wrong.
+      rows.push(['rot', 'Turn', 'select', [['0', 'no turn'], ['90', '90° right'], ['180', 'upside down'], ['270', '90° left']]]);
       rows.push(['dither', 'Dither', 'select', DITHER.filter((d) => d !== 'bayer2')]);
       rows.push(['maxColors', 'Max colours', 'range', [4, 125]]);
       rows.push(['brightness', 'Brightness', 'range', [-60, 60]]);
@@ -750,14 +818,31 @@ export class UI {
     }
     e.importControls.innerHTML = rows
       .map(([key, label, kind, range]) => {
-        if (kind === 'select')
+        if (kind === 'select') {
+          const cur = String(this.state.import[key] ?? range[0]);
           return `<label class="ctl"><span>${label}</span><select data-ctl="${key}">${range
-            .map((v) => `<option value="${v}">${v}</option>`)
+            .map((v) => {
+              // A row may be a bare value or a [value, plain-language label]
+              // pair - "90° right" tells you what happens, "90" does not.
+              const val = Array.isArray(v) ? v[0] : v;
+              const text = Array.isArray(v) ? v[1] : v;
+              // Mark the live value. This panel is rebuilt every time it opens,
+              // and a select that falls back to its first option while the state
+              // still holds the old one shows a setting the rasteriser is not
+              // using - which is worse than no control at all.
+              return `<option value="${val}"${cur === String(val) ? ' selected' : ''}>${text}</option>`;
+            })
             .join('')}</select></label>`;
-        if (kind === 'range')
-          return `<label class="ctl"><span>${label}</span><input class="slider" type="range" data-ctl="${key}" min="${range[0]}" max="${range[1]}" value="${
-            this.state.import[key] ?? (key === 'maxColors' ? 24 : key === 'trim' ? 16 : 0)
-          }"></label>`;
+        }
+        if (kind === 'range') {
+          const [lo, hi, step, dflt] = [range[0], range[1], range[2] || 1, range[3] ?? 0];
+          // Placement is stored as fractions (zoom 1, ox 0) and shown as
+          // percentages, because a slider that reads 0..100 is legible and one
+          // that reads 0.2..6 is not.
+          const raw = this.state.import[key] ?? dflt;
+          const shown = PLACEMENT.has(key) ? Math.round(raw * 100) : raw;
+          return `<label class="ctl"><span>${label}</span><input class="slider" type="range" data-ctl="${key}" min="${lo}" max="${hi}" step="${step}" value="${shown}"></label>`;
+        }
         return `<label class="ctl"><span>${label}</span><output data-ctl="${key}">auto</output></label>`;
       })
       .join('');
@@ -774,7 +859,7 @@ export class UI {
       const t = ev.target;
       if (!t.dataset || !t.dataset.ctl) return;
       const v = t.type === 'number' || t.type === 'range' ? Number(t.value) : t.value;
-      this.state.import[t.dataset.ctl] = v;
+      this.state.import[t.dataset.ctl] = PLACEMENT.has(t.dataset.ctl) ? v / 100 : v;
       this.actions.previewImport();
     };
     e.importControls.addEventListener('input', onInput);
@@ -788,8 +873,25 @@ export class UI {
 
   setImportPreview(canvas) {
     const e = this.el;
-    e.importPrev.replaceChildren(canvas);
+    // Only swap when it is a different canvas. replaceChildren() removes and
+    // re-adds, and re-parenting the preview canvas mid-drag ends the drag, so
+    // every slider tick would drop the finger that is still down.
+    if (e.importPrev.firstChild !== canvas) e.importPrev.replaceChildren(canvas);
     e.importPrev.hidden = false;
+  }
+
+  /**
+   * Move the placement sliders to wherever the drag left the picture.
+   *
+   * Only the values change: rebuilding the controls row would destroy the slider
+   * under a finger that is still dragging it.
+   */
+  syncImportPlacement() {
+    const imp = this.state.import;
+    for (const b of this.el.importControls.querySelectorAll('[data-ctl]')) {
+      if (!PLACEMENT.has(b.dataset.ctl)) continue;
+      b.value = Math.round(imp[b.dataset.ctl] * 100);
+    }
   }
 
   setUndoState({ canUndo, canRedo }) {
@@ -950,12 +1052,19 @@ export class UI {
     const e = this.el;
     e.players.innerHTML = roster
       .slice(0, 8)
-      .map(
-        (p) =>
-          `<span class="avatar ${p.id === meId ? 'me' : ''}" style="--c:${escapeHtml(p.color)}" title="${escapeHtml(
-            p.nick
-          )}">${escapeHtml(initials(p.nick))}${svg(DEVICE_ICON[p.device] || 'desktop', 'dev')}</span>`
-      )
+      .map((p) => {
+        // The shade they are holding, as a chip on their avatar. `shade` is a
+        // palette index or null - null means a player from an older room that
+        // never announced one, which renders as a plain avatar, not a wrong one.
+        const has = Number.isInteger(p.shade) && FLAT_COLORS[p.shade];
+        const hex = has ? FLAT_COLORS[p.shade] : '';
+        const code = has ? COLOR_CODES[p.shade] || '' : '';
+        const chip = has ? `<i class="shade" style="--s:${escapeHtml(hex)}"></i>` : '';
+        const title = has ? `${p.nick} - painting ${code} ${hex}`.trim() : p.nick;
+        return `<span class="avatar ${p.id === meId ? 'me' : ''}" style="--c:${escapeHtml(p.color)}" title="${escapeHtml(
+          title
+        )}">${escapeHtml(initials(p.nick))}${chip}${svg(DEVICE_ICON[p.device] || 'desktop', 'dev')}</span>`;
+      })
       .join('') + (roster.length > 8 ? `<span class="more">+${roster.length - 8}</span>` : '');
     e.me.style.setProperty('--c', this.state.color);
     e.me.textContent = this.state.nick;

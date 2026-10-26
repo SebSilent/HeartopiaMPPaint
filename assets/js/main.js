@@ -17,11 +17,21 @@ import { UI, cleanNick, validateNick, groupForIndex } from './ui.js';
 import { FLAT_COLORS, HEARTOPIA_GROUPS } from './data/heartopia-palette.js';
 import { stampFromFile, stampFromDataUrl, stampPreview } from './game/stamps.js';
 import { BRUSH_SIZES, DEFAULTS, LEVELS } from './presets.js';
-import { makeRoomCode, normalizeRoomCode, detectDevice, clamp } from './util.js';
+import { makeRoomCode, normalizeRoomCode, detectDevice, clamp, b64ToBytes } from './util.js';
+import {
+  saveBoard,
+  loadBoard,
+  clearBackup,
+  fitsDesign,
+  designIsEmpty,
+  savedCount,
+} from './game/backup.js';
 import { History, patchWrite } from './game/history.js';
 import { Blueprint } from './ui/blueprint.js';
 import { Preview3D } from './game/render3d.js';
 import { loadMesh } from './game/meshdata.js';
+import { loadSolid, sourceFor } from './game/solid.js';
+import { coverageFor } from './game/meshcover.js';
 import { findItem, itemIdForBoard, boardForItem, cellTotal } from './game/slots.js';
 import { outlineFor, boardOutline } from './game/outline.js';
 import { faceInfo, paintable, maskFor } from './game/faces.js';
@@ -78,7 +88,10 @@ const state = {
   designItem: null,
   designFamily: 'canvas',
   importMode: 'photo',
-  import: { fit: 'cover', dither: 'none', maxColors: 24, brightness: 0, contrast: 0, saturation: 0, trim: 16 },
+  // zoom/ox/oy are the placement of the picture inside the face. They live here
+  // because `rasterize` samples through them, so the preview you drag and the
+  // cells you get are the same numbers - see ui/importer.js fitRect().
+  import: { fit: 'cover', dither: 'none', maxColors: 24, brightness: 0, contrast: 0, saturation: 0, trim: 16, zoom: 1, ox: 0, oy: 0, rot: 0 },
 };
 
 let room = null;
@@ -92,6 +105,7 @@ let preview3d = null;
 let d3raf = null;
 let importSrc = null; // the decoded image behind the import panel
 let importOut = null; // the cells it produced
+let backupTimer = null; // the debounce behind the local board backup
 
 const actions = {
   onLayout: () => layout(),
@@ -148,6 +162,12 @@ const actions = {
     state.fillGlobal = !!v;
     ui.setTool(state.tool);
   },
+  setFillTolerance: (v) => {
+    // ΔE(2000) units. Past ~30 the palette is one big blob and the bucket stops
+    // meaning anything, so the ceiling is real rather than cosmetic.
+    state.fillTolerance = clamp(Number(v) || 0, 0, 30);
+    ui.setTool(state.tool);
+  },
   setMirror: (v) => {
     state.mirror = clamp(v | 0, 0, 3);
     ui.setTool(state.tool);
@@ -155,6 +175,10 @@ const actions = {
   },
   setColor: (idx) => {
     ui.setColorIdx(idx);
+    // Tell the room, so every avatar can show the shade this player is holding.
+    // Presence, not truth: nothing here touches the grid, so a lost message
+    // costs a stale dot and cannot make two boards disagree.
+    if (room) room.setProfile({ shade: idx });
     // In colour mode the lit shade follows what you pick, because you are
     // about to key that shade in.
     if (blueprint && blueprint.mode === 'colour') {
@@ -253,7 +277,9 @@ function startRoom({ nick, color, device, room: code, ratio, level, item }) {
 
   room = new Room({
     code,
-    me: { clientId: CONFIG.clientId, nick, color, device },
+    // Seeded with the shade we are already holding, so a player joining mid-
+    // session sees the legend filled in rather than blank until someone clicks.
+    me: { clientId: CONFIG.clientId, nick, color, device, shade: state.colorIdx },
     item: state.item,
   });
 
@@ -268,6 +294,9 @@ function startRoom({ nick, color, device, room: code, ratio, level, item }) {
   // window.history, spelled out: a module-scope `history` for the undo stack
   // would otherwise shadow the global and throw here.
   window.history.replaceState(null, '', `?room=${code}&item=${state.item}`);
+  // Wait for the room to answer before offering anything: if it still has the
+  // picture, there is nothing to rescue, and the offer must not even appear.
+  setTimeout(offerBackup, 2200);
 }
 
 /**
@@ -280,7 +309,7 @@ function startLocal() {
   // Assign the module-level room, do not shadow it: every action below (setItem,
   // setBoard, the design dialog) guards on `room`, so a local `const` here left
   // them all silently doing nothing in the offline sandbox.
-  room = new Room({ code: 'LOCAL', me: { clientId: CONFIG.clientId, nick: state.nick || 'alone', color: state.color, device: detectDevice() }, item: state.item });
+  room = new Room({ code: 'LOCAL', me: { clientId: CONFIG.clientId, nick: state.nick || 'alone', color: state.color, device: detectDevice(), shade: state.colorIdx }, item: state.item });
   room.me.slot = 1;
   room.status = 'online';
   mount(room);
@@ -288,6 +317,8 @@ function startLocal() {
   ui.setLocked(false);
   ui.closeGate(); // reveals the app and calls onLayout() when it does
   ui.toast('Offline board - nothing you paint leaves this page', 'info', 4000);
+  // Nothing can arrive to overwrite it, so the rescue is offered straight away.
+  offerBackup();
 }
 
 /** Build the canvas, cursors, input, blueprint and 3D on top of a room. */
@@ -347,6 +378,9 @@ function mount(room) {
   ui.setBrush(state.brush);
   ui.setPlayers(room.roster, room.me.clientId);
   syncFaces();
+  // The design event only fires on a change, so without this the 3D button
+  // would describe whatever item the last room had.
+  sync3dAvailability(room.design.item && room.design.item.id);
   ui.setUndoState(undo);
   ui.syncTrace(blueprint.mode, blueprint.block);
   wireRoom(room);
@@ -427,6 +461,7 @@ function wireRoom(r) {
     syncFaces();
     refreshTrace();
     applyOutline();
+    sync3dAvailability(item.id);
     rebuild3d();
   });
 
@@ -454,6 +489,7 @@ function wireRoom(r) {
     // Re-bake the face textures in place: the triangles hold the canvases they
     // were built from, so clearing the cache alone would keep the old pixels up.
     if (preview3d) preview3d.refresh();
+    scheduleBackup();
   });
 
   r.on('sync', (s) => {
@@ -613,10 +649,32 @@ function refreshTrace() {
 
 /* ---------------- import ---------------- */
 
+// A phone photo dropped on the wrong tab is not a bug to chase, it is a frozen
+// tab. The caps live in CONFIG.limits so they can be lowered for a test without
+// shipping a 40-megapixel image at it.
 async function loadImport(file) {
   ui.setImportInfo('Reading…', false);
+  if (!file) return;
+  if (file.type && !file.type.startsWith('image/')) {
+    ui.setImportInfo(`That is a ${file.type || 'unknown'} file, not a picture`, false);
+    return;
+  }
+  if (file.size > CONFIG.limits.importMaxBytes) {
+    ui.setImportInfo(`That file is ${(file.size / 1048576).toFixed(0)} MB - too big to read here`, false);
+    return;
+  }
   try {
     importSrc = await loadImage(file);
+    if (importSrc.naturalWidth * importSrc.naturalHeight > CONFIG.limits.importMaxPixels) {
+      const mp = (importSrc.naturalWidth * importSrc.naturalHeight / 1e6).toFixed(0);
+      ui.setImportInfo(
+        `That picture is ${importSrc.naturalWidth} × ${importSrc.naturalHeight} (${mp} MP). ` +
+          `Crop it closer before importing.`,
+        false
+      );
+      importSrc = null;
+      return;
+    }
     ui.el.dropText.textContent = file.name;
     previewImport();
   } catch (e) {
@@ -626,6 +684,18 @@ async function loadImport(file) {
 
 function previewImport() {
   if (!importSrc || !room) return;
+  try {
+    previewImportInner();
+  } catch (e) {
+    // This runs on every slider tick and every drag of the picture, so a throw
+    // that escaped would repeat under a finger. Drop the result rather than
+    // leave a stale one that Apply would happily paint.
+    importOut = null;
+    ui.setImportInfo(`Could not read that image: ${e.message}`, false);
+  }
+}
+
+function previewImportInner() {
   const face = room.face;
   const o = { ...state.import, mode: state.importMode };
   let out;
@@ -673,11 +743,21 @@ function previewImport() {
  * The preview is drawn at exactly one pixel per cell and scaled up in CSS with
  * `image-rendering: pixelated`. A preview resampled to look smooth would not be
  * showing you the board you are about to get.
+ *
+ * For a photo it is also the thing you drag: the face is the board, the picture
+ * is an object sitting on it, and moving the object is the whole point - at
+ * `contain` or zoomed-out `cover` the default centred placement is not the
+ * placement anyone wants.
  */
+// One canvas, reused. A fresh element per preview would be dropped into the
+// panel under a finger that is mid-drag, and re-parenting a captured pointer
+// ends the drag - the picture would jump back to where you started.
+let importPrevCv = null;
+
 function drawImportPreview(out) {
   const w = out.w;
   const h = out.h;
-  const c = document.createElement('canvas');
+  const c = importPrevCv || (importPrevCv = document.createElement('canvas'));
   c.width = w;
   c.height = h;
   const ctx = c.getContext('2d');
@@ -693,7 +773,75 @@ function drawImportPreview(out) {
   }
   ctx.putImageData(img, 0, 0);
   c.style.width = `${Math.min(240, Math.max(90, w))}px`;
+  // A screenshot board is already the exact grid; there is nothing to place.
+  if (importSrc && state.importMode !== 'screenshot') wirePlacement(c);
   ui.setImportPreview(c);
+}
+
+/**
+ * Drag the picture inside the face, wheel or pinch to scale it.
+ *
+ * The gesture writes the same `ox/oy/zoom` the sliders write, and the preview is
+ * rebuilt through previewImport(), so what you drag is what gets rasterised -
+ * there is no second copy of the placement maths to drift out of step.
+ */
+function wirePlacement(c) {
+  c.classList.add('placeable');
+  c.title = 'Drag the picture to place it. Scroll to scale it.';
+  if (c.dataset.wired) return;
+  c.dataset.wired = '1';
+  let drag = null;
+  // Read the geometry off the canvas every time, not from the call that wired
+  // it: the element is reused across faces, and a sleeve is not the size of a
+  // front panel.
+  const px = (e) => {
+    const r = c.getBoundingClientRect();
+    return { x: ((e.clientX - r.left) / r.width) * c.width, y: ((e.clientY - r.top) / r.height) * c.height };
+  };
+  c.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    c.setPointerCapture(e.pointerId);
+    drag = { at: px(e), ox: state.import.ox, oy: state.import.oy };
+  });
+  c.addEventListener('pointermove', (e) => {
+    if (!drag) return;
+    const p = px(e);
+    // Pan is stored as a fraction of the face, so it survives the face changing
+    // size and matches fitRect() exactly.
+    state.import.ox = clamp(drag.ox + (p.x - drag.at.x) / c.width, -1, 1);
+    state.import.oy = clamp(drag.oy + (p.y - drag.at.y) / c.height, -1, 1);
+    ui.syncImportPlacement();
+    schedulePreview();
+  });
+  const end = () => (drag = null);
+  c.addEventListener('pointerup', end);
+  c.addEventListener('pointercancel', end);
+  c.addEventListener(
+    'wheel',
+    (e) => {
+      e.preventDefault();
+      state.import.zoom = clamp(state.import.zoom * Math.exp(-e.deltaY * 0.0015), 0.2, 6);
+      ui.syncImportPlacement();
+      schedulePreview();
+    },
+    { passive: false }
+  );
+}
+
+/**
+ * One re-rasterise per frame, however many pointer events arrived.
+ *
+ * previewImport() resamples the picture and quantises it to the 125 shades -
+ * real work, and a drag fires a pointermove per mouse tick. Coalescing to the
+ * animation frame keeps the drag fluid instead of queuing a backlog of previews.
+ */
+let previewFrame = null;
+function schedulePreview() {
+  if (previewFrame != null) return;
+  previewFrame = requestAnimationFrame(() => {
+    previewFrame = null;
+    previewImport();
+  });
 }
 
 function applyImport() {
@@ -724,7 +872,10 @@ function open3d() {
   if (!preview3d) {
     preview3d = new Preview3D(
       cv,
-      (faceId) => faceTexture(faceId),
+      // The mesh is the one this preview is currently built from, so the texture
+      // alpha can follow the garment instead of the paint ring. rebuild3d keeps
+      // `meshLoaded` null until a garment mesh arrives, and null means panels.
+      (faceId) => faceTexture(faceId, meshLoaded || null),
       // The same union the 2D layer uses: mesh outline for clothing, maskLines
       // for everything else.
       (itemId, faceId) => outlineFor(itemId, faceId) || faceOutline(itemId, faceId)
@@ -733,10 +884,30 @@ function open3d() {
   }
   rebuild3d();
   if (!d3raf) {
+    // A throw inside a frame would otherwise repeat sixty times a second,
+    // because the next frame is queued before the work runs. Stop on the first
+    // one and say so; the panel stays closed until the user reopens it.
     const loop = () => {
-      d3raf = requestAnimationFrame(loop);
-      if (document.getElementById('d3Panel').hidden) return;
-      preview3d.render();
+      if (document.getElementById('d3Panel').hidden) {
+        d3raf = requestAnimationFrame(loop);
+        return;
+      }
+      try {
+        preview3d.render();
+        d3raf = requestAnimationFrame(loop);
+      } catch (e) {
+        d3raf = null;
+        // The frame died somewhere between a clip and its restore. Left alone,
+        // the next frame would paint inside that clip and the preview would stay
+        // broken for a fault the user has already been told about.
+        try {
+          preview3d.resetState();
+        } catch (_) {
+          /* nothing else to try */
+        }
+        ui.toast(`3D preview stopped: ${e.message}`, 'warn', 5000);
+        ui.hidePanel('d3Panel');
+      }
     };
     d3raf = requestAnimationFrame(loop);
   }
@@ -747,8 +918,36 @@ function close3d() {
   d3raf = null;
 }
 
-/** A face as an image at exactly one pixel per cell - the 3D texture. */
-function faceTexture(faceId) {
+/**
+ * Tell the toolbar whether this item has anything to show in 3D.
+ *
+ * Every item in the catalog does today, so this is not decoration: a room from
+ * an older build, or an id the catalog has not caught up with, lands on the
+ * fallback layout, and a fallback row of flat rectangles is not a 3D preview -
+ * it is the 2D board with a rotation on it.
+ */
+function sync3dAvailability(itemId) {
+  // Asked about a design that has not resolved yet: leave the button as it is
+  // rather than light up an error path nobody can act on.
+  if (!itemId) {
+    ui.set3DAvailable(false, 'No design loaded yet');
+    ui.set3DKind(null);
+    return;
+  }
+  const source = sourceFor(itemId);
+  ui.set3DAvailable(source !== null, source === null ? 'This item has no 3D model yet' : '');
+  ui.set3DKind(source);
+}
+
+/** A face as an image at exactly one pixel per cell - the 3D texture.
+ *
+ * `mesh` is the garment mesh when the item has one. It changes only the alpha:
+ * a mesh does not stop at the paint ring, so clipping its texture to the ring
+ * punches real holes in the surface (see game/meshcover.js). Without a mesh the
+ * flat panel schematic is clipped to the ring by its own silhouette, and the
+ * ring mask stays the right gate.
+ */
+function faceTexture(faceId, mesh) {
   const idx = room.design.item.faces.findIndex((f) => f.id === faceId);
   const g = room.design.faceAt(idx);
   if (!g) return null;
@@ -756,6 +955,11 @@ function faceTexture(faceId) {
   c.width = g.w;
   c.height = g.h;
   const ctx = c.getContext('2d', { willReadFrequently: true });
+  // Browsers cap how many canvas backing stores a page may hold, and a request
+  // past the cap hands back null instead of throwing. This runs once per face,
+  // so on a phone with the 2D board and the preview all alive it is the one
+  // place the limit is actually reached.
+  if (!ctx) return null;
   // Two opposite failures have both been shipped here, and the fix is the same
   // single pass that avoids both.
   //
@@ -763,18 +967,19 @@ function faceTexture(faceId) {
   //    them, so untouched cells came back with alpha 0 and the whole garment
   //    was a hole the backdrop shone through.
   // 2. Filling the entire w x h rectangle with paper fixed that but made the
-  //    rectangle opaque. The mesh does not stop at the face's own outline, so
-  //    every corner of the rectangle stuck out of the garment as a white tab,
-  //    and where two tabs bridged over real background they sealed a pocket of
-  //    it inside the silhouette - which is what read as holes. Measured: paper
-  //    over the whole rect traps 1,844 backdrop pixels on the t-shirt at rest,
-  //    clipped to the face mask it traps 28.
+  //    rectangle opaque, and the corners of the rectangle stick out of the
+  //    garment as white tabs.
   //
   // So: inside the mask an unpainted cell is paper, outside it is nothing. The
   // paint itself is composited in the same buffer, which is why one
   // putImageData is now correct where it used to be the bug.
+  //
+  // Which mask is the open question, and it is not the same answer with a mesh
+  // and without one: the paint ring is where the GAME lets you paint, the mesh
+  // coverage is where the GARMENT reads texture. They differ - Mary Janes by
+  // 1,321 texels - and using the ring for the mesh made real cloth transparent.
   const item = room.design.item;
-  const mask = maskFor(item.id, faceId);
+  const mask = mesh ? coverageFor(mesh, item.faces).get(faceId) : maskFor(item.id, faceId);
   const img = ctx.createImageData(g.w, g.h);
   const words = new Uint32Array(img.data.buffer);
   g.fillRGBA(words, room.display ? room.display.cellsFor(idx) : null);
@@ -808,13 +1013,32 @@ function rebuild3d() {
   if (meshItem !== item.id) {
     meshItem = item.id;
     meshLoaded = undefined;
-    loadMesh(item.id).then((mesh) => {
-      // The design moved on while this was in flight.
-      if (!preview3d || meshItem !== item.id) return;
-      meshLoaded = mesh || null;
-      preview3d.setMesh(meshLoaded);
-      preview3d.build(room.design.item);
-    });
+    // A garment's baked mesh wins; an item whose face folds up (the book) gets a
+    // generated solid; anything else stays on flat panels. Whichever arrives
+    // second swaps in, which is why both paths rebuild below.
+    Promise.all([loadMesh(item.id), loadSolid(item.id)])
+      .then(([mesh, solid]) => {
+        // The design moved on while this was in flight.
+        if (!preview3d || meshItem !== item.id) return;
+        meshLoaded = mesh || solid || null;
+        preview3d.setMesh(meshLoaded);
+        preview3d.build(room.design.item);
+      })
+      // A generated solid or a decoded mesh can throw, and an unhandled
+      // rejection here means a panel that silently never draws anything at all -
+      // the one failure the user cannot recover from by clicking again. Fall
+      // back to the flat layout, which always builds, and say what happened.
+      .catch((e) => {
+        if (!preview3d || meshItem !== item.id) return;
+        meshLoaded = null;
+        preview3d.setMesh(null);
+        try {
+          preview3d.build(room.design.item);
+        } catch (_) {
+          /* even the fallback failed; the loop below reports it */
+        }
+        ui.toast(`3D fell back to the flat layout: ${e.message}`, 'warn', 5000);
+      });
   }
   preview3d.setMesh(meshLoaded || null);
   preview3d.build(item);
@@ -992,12 +1216,74 @@ function exportPNG() {
   ui.toast(faces.length > 1 ? `Saved ${faces.length} faces as PNG` : 'Saved as PNG', 'good', 1800);
 }
 
+/**
+ * Copy the board into localStorage a beat after it stops changing. A stroke
+ * lands in batches, so saving on every grid event would re-stringify the whole
+ * board dozens of times a second to keep a single copy.
+ */
+const BACKUP_MS = 1200;
+
+function scheduleBackup() {
+  if (!room) return;
+  if (backupTimer) clearTimeout(backupTimer);
+  backupTimer = setTimeout(flushBackup, BACKUP_MS);
+}
+
+/** Save now. Called by the debounce and when the page is about to disappear. */
+function flushBackup() {
+  if (backupTimer) {
+    clearTimeout(backupTimer);
+    backupTimer = null;
+  }
+  if (!room) return;
+  saveBoard(room.code, room.design.id, room.design.toSnapshot());
+}
+
+/**
+ * Offer the picture this device painted last time it was here.
+ *
+ * Only on a board nothing has painted: the room is the truth, and a rescue that
+ * overwrote a live picture would be worse than no rescue at all. It comes back
+ * through the import path rather than being adopted wholesale, so it goes out on
+ * the wire as ordinary paint under a fresh stamp, lands as one undo step, and
+ * cannot drag the lamport clock backwards - which is also why a backup written
+ * by an older build is merely paint, not a state packet.
+ */
+function offerBackup() {
+  if (!room || !input) return;
+  const design = room.design;
+  const row = loadBoard(room.code, design.id);
+  if (!row || !fitsDesign(row, design)) return;
+  const wanted = savedCount(row);
+  if (!wanted || !designIsEmpty(design)) return;
+  const when = new Date(row.saved).toLocaleString();
+  if (!confirm(`Bring back the board you left here - ${wanted} painted cell${wanted === 1 ? '' : 's'}, ${when}?`)) return;
+  let cells = 0;
+  for (let i = 0; i < row.snapshot.faces.length; i++) {
+    const f = row.snapshot.faces[i];
+    let buf;
+    try {
+      buf = b64ToBytes(f.cells || '');
+    } catch (_) {
+      continue; // one unreadable face must not lose the rest
+    }
+    cells += applyCellsToFace(room, input, buf, f.w, f.h, i).changed;
+  }
+  view.markDirty();
+  if (preview3d) preview3d.refresh();
+  ui.toast(cells ? `Restored ${cells} cell${cells === 1 ? '' : 's'} from your last visit` : 'Nothing could be restored', cells ? 'info' : 'warn');
+}
+
 function clearBoard() {
   if (!room || !room.canPaint) return;
   if (!confirm('Clear the whole design for everyone in this room?')) return;
   room.clear();
   undo.clear();
   ui.setUndoState(undo);
+  // A deliberate clear is the one time the backup is wrong, not a rescue, so it
+  // goes now. The clear itself re-triggers the autosave, and a saved-but-empty
+  // board is never offered back, so the two cannot fight.
+  clearBackup(room.code, room.design.id);
   ui.toast('Design cleared', 'info');
   refreshTrace();
 }
@@ -1156,6 +1442,12 @@ function boot() {
   // Touch the palette once so the perceptual tables are warm before a person
   // asks for an import; the first quantise is otherwise measurably slower.
   palette();
+
+  // A phone getting backgrounded, or a tab being swiped away, is the exact
+  // moment the debounce has not fired yet. Save what is on screen before it.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushBackup();
+  });
 
   if (params.get('local')) startLocal();
   else ui.openGate();

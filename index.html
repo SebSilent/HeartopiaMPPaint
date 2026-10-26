@@ -172,6 +172,10 @@
         <h2>3D preview</h2>
         <button class="panel-x" data-close="d3Panel" type="button" aria-label="Close">×</button>
       </header>
+      <!-- Says what you are looking at. A garment's mesh and a furniture item's
+           flat layout are not the same kind of thing, and a diagram that is
+           presented as a model makes people distrust the real ones. -->
+      <p id="d3Kind" class="kind">model</p>
       <canvas id="d3Canvas" class="d3-canvas"></canvas>
       <p class="fine">Drag to orbit.</p>
       <div class="card-actions">

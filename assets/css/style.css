@@ -187,6 +187,12 @@ input::placeholder { color: #6b5c48; }
 .dims { font-family: var(--font-pixel); font-size: 0.8rem; font-weight: 400; color: var(--accent-text); text-transform: none; letter-spacing: 0; }
 .dims.big { font-size: 1rem; text-align: center; margin: 14px 0 2px; }
 .fine { font-size: 0.82rem; color: var(--ink-2); margin: 7px 0 0; }
+/* What kind of 3D you are looking at. Quiet when it is a real model, loud when
+   it is only a flat layout - the difference is the whole point of saying it. */
+.kind { font-size: 0.8rem; color: var(--ink-2); margin: 0 0 6px; letter-spacing: 0.02em; }
+/* Not `.warn`: a bare `.warn` rule elsewhere in this sheet would fight over
+   font-size and margin, so the state gets its own name. */
+.kind.is-flat { color: var(--bad); font-weight: 700; }
 .fineprint { font-size: 0.82rem; color: var(--ink-2); margin: 14px 0 0; text-align: center; }
 
 .seg { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -234,7 +240,12 @@ input::placeholder { color: #6b5c48; }
 .btn.ghost:active { transform: translate(1px, 1px); box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.35); }
 .btn.ghost.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent-deep); }
 .btn.ghost.danger:hover { background: var(--bad); color: #fff; border-color: var(--bad); }
-.btn.ghost:disabled { opacity: 0.45; cursor: default; }
+/* A disabled control must not look pressable: some browsers still match the
+   pseudo-classes on a disabled button, and a button that moves under a finger
+   it cannot serve reads as broken rather than as unavailable. */
+.btn.ghost:disabled { opacity: 0.45; cursor: default; box-shadow: none; }
+.btn.ghost:disabled:active,
+.btn.ghost:disabled:hover { transform: none; background: transparent; color: inherit; }
 
 /* -------------------------------- app -------------------------------- */
 
@@ -315,6 +326,17 @@ input::placeholder { color: #6b5c48; }
 .avatar:first-child { margin-left: 0; }
 .avatar .dev { position: absolute; right: -2px; bottom: -3px; width: 13px; height: 13px; background: var(--ground-raised); padding: 2px; color: var(--on-ground); }
 .avatar.me { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The shade this player is holding, as a chip on their avatar. Square with a
+   hard border, because it is a palette cell and not a hue blob; top-right so it
+   never collides with the device icon. */
+.avatar .shade {
+  position: absolute;
+  top: -3px; right: -3px;
+  width: 11px; height: 11px;
+  background: var(--s);
+  border: 1.5px solid var(--ground-raised);
+  box-sizing: border-box;
+}
 .more { font-size: 0.75rem; color: var(--on-ground-2); font-weight: 700; margin-left: 4px; }
 .me-chip {
   padding: 4px 10px;
@@ -634,6 +656,16 @@ kbd {
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
+/* The photo preview is an input, not a picture: you drag the image around on
+   it. touch-action:none so a finger pans the image instead of scrolling the
+   panel out from under it. */
+.import-prev canvas.placeable {
+  cursor: grab;
+  touch-action: none;
+  outline: 2px dashed rgba(58, 42, 28, 0.35);
+  outline-offset: 2px;
+}
+.import-prev canvas.placeable:active { cursor: grabbing; }
 
 /* Import controls: a label, a control, and the number it currently means. */
 .controls { display: grid; gap: 8px; }

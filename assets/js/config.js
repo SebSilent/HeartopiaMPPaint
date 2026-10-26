@@ -23,6 +23,16 @@ function setting(key, urlParam, fallback) {
 }
 
 /**
+ * A number setting that stays a number. `Number('abc')` is NaN, and `x > NaN`
+ * is false for every x, so a mistyped param does not merely misconfigure a
+ * guard - it switches the guard off. Anything unusable falls back.
+ */
+function num(key, urlParam, fallback, min = 0) {
+  const n = Number(setting(key, urlParam, fallback));
+  return Number.isFinite(n) && n >= min ? n : fallback;
+}
+
+/**
  * 'peer'  = serverless. First player in a room hosts it over WebRTC and
  *           relays to everyone else. Works with GitHub Pages alone.
  * 'ws'    = a small relay server (server/relay.js) holds the room. More
@@ -95,6 +105,14 @@ export const CONFIG = {
     nickMax: 16,
     maxCells: 256 * 256, // guards against a malformed snapshot allocating 400 MB
     maxRoster: 64,
+    // An import is read pixel by pixel, so a phone photo dropped on the wrong
+    // tab is a frozen tab, not a bug to chase. The cap that matters is pixels,
+    // since that is what the rasteriser touches; bytes only catch a file that
+    // would take forever to decode at all. Both are tunable for testing -
+    // `?importMaxMP=1` lets a probe prove the refusal without shipping a 40 MP
+    // image.
+    importMaxBytes: num('importMaxMB', 'importMaxMB', 40, 1) * 1024 * 1024,
+    importMaxPixels: num('importMaxMP', 'importMaxMP', 40, 0.1) * 1e6,
   },
 
   /** Stable per-tab id: survives reloads, unique across tabs on one device. */

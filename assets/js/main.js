@@ -26,6 +26,7 @@ import {
   designIsEmpty,
   savedCount,
 } from './game/backup.js';
+import { loadRecents, pushRecent, saveRecents } from './game/recents.js';
 import { History, patchWrite } from './game/history.js';
 import { Blueprint } from './ui/blueprint.js';
 import { Preview3D } from './game/render3d.js';
@@ -67,6 +68,9 @@ const state = {
   tool: TOOLS.BRUSH,
   colorIdx: 16, // a warm mid-tone that reads well on the paper
   colorHex: FLAT_COLORS[16],
+  // The last few shades this player reached for. Local to this device and this
+  // person: it never crosses the wire, so it cannot make two boards disagree.
+  recent: loadRecents(),
   brush: 1,
   brushSizes: BRUSH_SIZES,
   // An imported brush tip, or null for the built-in square/round footprints.
@@ -190,6 +194,23 @@ const actions = {
     state.mirror = clamp(v | 0, 0, 3);
     ui.setTool(state.tool);
     view.markDirty();
+  },
+  /**
+   * Record a shade as the most recent one this player used. This is called from
+   * `ui.setColorIdx`, which every colour change already goes through - so an
+   * eyedropper pick and an Alt-drag sample land here as well, which is the point:
+   * a shade you went and sampled is a shade you are about to want again.
+   *
+   * The write can fail - private mode, quota - and that is not worth a message.
+   * The row keeps working for this session from memory and simply is not there
+   * next time, which is exactly what a convenience should degrade to.
+   */
+  rememberShade: (idx) => {
+    const next = pushRecent(state.recent, idx);
+    if (next.length === state.recent.length && next[0] === state.recent[0]) return;
+    state.recent = next;
+    saveRecents(next);
+    ui.setRecent(next);
   },
   setColor: (idx) => {
     ui.setColorIdx(idx);
@@ -391,7 +412,8 @@ function mount(room) {
   ui.setZoom(view.zoomPercent);
 
   ui.showGroup(groupForIndex(state.colorIdx));
-  ui.setColorIdx(state.colorIdx);
+  ui.setColorIdx(state.colorIdx, false); // same rule: a starting shade is not a choice
+  ui.setRecent(state.recent);
   ui.setTool(state.tool);
   ui.setBrush(state.brush);
   ui.setPlayers(room.roster, room.me.clientId);
@@ -1445,7 +1467,12 @@ function boot() {
   ui._join.family = state.designFamily;
   ui._buildItemPick();
   ui.showGroup(groupForIndex(state.colorIdx));
-  ui.setColorIdx(state.colorIdx);
+  // Not remembered: this shade is a default or a saved profile value, not
+  // something the player just reached for. A row that opens with the starting
+  // shade is a row that lies about what they have been using. The row is still
+  // drawn below, because skipping the memory also skips its redraw.
+  ui.setColorIdx(state.colorIdx, false);
+  ui.setRecent(state.recent);
   ui.setTool(state.tool);
   ui.setBrush(state.brush);
   // Bring back the tip this player imported last time. Async, and silent if it

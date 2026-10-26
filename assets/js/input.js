@@ -100,6 +100,7 @@ export class Input {
     this.hover = null;
     this.poly = []; // pending polygon points
     this._polyAt = 0; // when the last polygon point was placed, for double-click close
+    this._sampling = null; // pointer id of an Alt-drag eyedropper, if one is down
     this._pointers = new Map();
     this._el = view.base.parentElement;
     this._off = [];
@@ -259,7 +260,7 @@ export class Input {
         return;
       }
       // Touch has no click count to read, so a double-tap is timed instead.
-      this._start(pid, cell, type, 1);
+      this._start(pid, cell, type, 1, e.altKey);
       this._flushOut();
       return;
     }
@@ -267,7 +268,7 @@ export class Input {
     this._pointers.set(pid, { x: cell.x, y: cell.y, type, down: true });
 
     if (type === 'pen') {
-      this._start(pid, cell, type, e.detail);
+      this._start(pid, cell, type, e.detail, e.altKey);
       this._flushOut();
       return;
     }
@@ -279,17 +280,26 @@ export class Input {
       return;
     }
     if (e.button !== 0) return;
-    this._start(pid, cell, type, e.detail);
+    this._start(pid, cell, type, e.detail, e.altKey);
     this._flushOut();
   }
 
   /** One entry point for every tool, so mouse/pen/touch cannot drift apart. */
-  _start(pid, cell, type, detail = 1) {
+  _start(pid, cell, type, detail = 1, alt = false) {
     const st = this.getState();
     // floor, not round: cell n spans [n, n+1). Rounding would let a tap at 2.5
     // read cell 3, i.e. steal the left half of the neighbour's territory.
     const x = Math.floor(cell.x);
     const y = Math.floor(cell.y);
+
+    // Alt samples instead of painting, whatever tool is showing. It reads the
+    // board and does not change it, so - like the eyedropper it replaces for the
+    // length of the drag - it works before the room has handed you a slot.
+    if (alt) {
+      this._sampling = pid;
+      this._sampleAt(x, y);
+      return;
+    }
 
     // The eyedropper reads the board, it does not change it, so it works while
     // the room is still handing you a slot. Everything that writes has to wait.
@@ -299,8 +309,7 @@ export class Input {
     }
 
     if (st.tool === TOOLS.PICK) {
-      const c = this._grid.colorAt(x, y);
-      if (c > 0) this.setState({ colorIdx: c });
+      this._sampleAt(x, y);
       return;
     }
     if (st.tool === TOOLS.FILL) return this._floodAt(x, y);
@@ -335,6 +344,19 @@ export class Input {
       return;
     }
     this._beginStroke(pid, cell, type);
+  }
+
+  /**
+   * Read the shade under a cell and hold it.
+   *
+   * Empty is not a colour, it is the absence of one: sampling blank space leaves
+   * the current shade alone rather than switching to nothing. That is also what
+   * makes an Alt-drag across a garment's unpainted shoulder safe - the shade you
+   * were holding survives the pass over the gap.
+   */
+  _sampleAt(x, y) {
+    const c = this._grid.colorAt(x, y);
+    if (c > 0 && c !== this.getState().colorIdx) this.setState({ colorIdx: c });
   }
 
   _beginStroke(pid, cell, type) {
@@ -384,6 +406,15 @@ export class Input {
       return;
     }
 
+    // An Alt-drag keeps sampling until the button comes up. Releasing Alt
+    // mid-drag does not hand the pointer back to the paint tool, because the
+    // stroke it would start was never aimed: the pointer is already somewhere
+    // else, and a dot of paint there is not what anybody asked for.
+    if (this._sampling === pid) {
+      this._sampleAt(Math.floor(cell.x), Math.floor(cell.y));
+      return;
+    }
+
     const sh = this.shapes.get(pid);
     if (sh) {
       // floor, not round: _start floored the anchor, so the free end has to
@@ -424,6 +455,7 @@ export class Input {
         this._pointers.delete(pid);
       }
     }
+    if (this._sampling === pid) this._sampling = null;
     if (this.pan && this.pan.pid === pid) this.pan = null;
     const p = this._pointers.get(pid);
     if (p) p.down = false;

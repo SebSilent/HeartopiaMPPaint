@@ -661,6 +661,70 @@ test('the polygon rubber line ends on the cell the next click would add', () => 
   input.destroy();
 });
 
+test('Alt samples the shade under the pointer instead of painting', () => {
+  const { input, grid, room, state } = makeInput({ state: { tool: TOOLS.BRUSH, colorIdx: 16 } });
+  grid.paint([grid.idx(4, 4)], 40, 0, 2);
+  input.onDown(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE, altKey: true }));
+  assert.equal(state.colorIdx, 40, 'the shade it was aimed at');
+  assert.equal(room.ops.length, 0, 'and nothing painted');
+  assert.equal([...grid.color].filter((c) => c === 16).length, 0, 'not even a dot of the old one');
+  input.onUp(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE }));
+  input.destroy();
+});
+
+test('an Alt-drag keeps sampling, and stops when the button comes up', () => {
+  const { input, grid, room, state } = makeInput({ state: { tool: TOOLS.BRUSH, colorIdx: 16 } });
+  grid.paint([grid.idx(4, 4)], 40, 0, 2);
+  grid.paint([grid.idx(6, 6)], 55, 0, 2);
+  grid.paint([grid.idx(8, 8)], 70, 0, 2);
+
+  input.onDown(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE, altKey: true }));
+  assert.equal(state.colorIdx, 40);
+  input.onMove(pe({ clientX: 6 * SCALE, clientY: 6 * SCALE }));
+  assert.equal(state.colorIdx, 55, 'the drag picked up the next shade it crossed');
+  assert.equal(room.ops.length, 0, 'and still painted nothing on the way');
+
+  input.onUp(pe({ clientX: 6 * SCALE, clientY: 6 * SCALE }));
+  input.onMove(pe({ clientX: 8 * SCALE, clientY: 8 * SCALE }));
+  assert.equal(state.colorIdx, 55, 'after release a plain hover is just a hover');
+  input.destroy();
+});
+
+test('sampling blank space leaves the held shade alone', () => {
+  // Empty is not a colour. Dragging Alt across an unpainted shoulder must not
+  // quietly drop the player to "nothing".
+  const { input, grid, state } = makeInput({ state: { tool: TOOLS.BRUSH, colorIdx: 16 } });
+  grid.paint([grid.idx(4, 4)], 40, 0, 2);
+  input.onDown(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE, altKey: true }));
+  input.onMove(pe({ clientX: 7 * SCALE, clientY: 7 * SCALE })); // blank
+  assert.equal(state.colorIdx, 40, 'the last real shade survives the gap');
+  input.onUp(pe({ clientX: 7 * SCALE, clientY: 7 * SCALE }));
+  input.destroy();
+});
+
+test('Alt sampling works while the room has not handed you a slot', () => {
+  // It reads the board and changes nothing, so there is no reason to make it
+  // wait for a slot - and every reason not to, since finding the shade you want
+  // is exactly what you do while connecting.
+  const { input, grid, room, state } = makeInput({ state: { tool: TOOLS.BRUSH, colorIdx: 16 } });
+  grid.paint([grid.idx(2, 2)], 40, 0, 2);
+  room.canPaint = false;
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE, altKey: true }));
+  assert.equal(state.colorIdx, 40);
+  assert.equal(room.events.includes('blocked'), false, 'and it is not refused');
+  input.onUp(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE }));
+  input.destroy();
+});
+
+test('Alt samples even with the eraser out', () => {
+  const { input, grid, state } = makeInput({ state: { tool: TOOLS.ERASER, colorIdx: 16 } });
+  grid.paint([grid.idx(5, 5)], 40, 0, 2);
+  input.onDown(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE, altKey: true }));
+  assert.equal(state.colorIdx, 40, 'the eraser is a brush with a fixed colour, not a reason to stop reading');
+  input.onUp(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+  input.destroy();
+});
+
 test('a double-click closes the polygon and paints it as one op', () => {
   const { input, grid, room } = makeInput({ state: { tool: TOOLS.POLYGON, shapeFilled: true } });
   input.onDown(pe({ clientX: 1 * SCALE, clientY: 1 * SCALE }));

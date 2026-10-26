@@ -981,6 +981,23 @@ input[type="range"].slider::-moz-range-thumb {
 .swatch:hover { border-color: #fff; }
 .swatch.active { outline: 3px solid #fff; outline-offset: 1px; }
 
+/* Recently used shades. The same control as the palette above it, in its own
+   row. `width: 100%` is right for a grid cell and wrong in a flex row, so the
+   width is stated here and aspect-ratio keeps them square. The row collapses
+   when there is nothing in it: an empty labelled group is just something a
+   screen reader has to walk past. */
+.recent { display: flex; align-items: center; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+.recent:empty { display: none; }
+.recent-label {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--ink-2);
+}
+.recent-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.recent-row .swatch { width: 30px; }
+
 /* ------------------------------- toasts ------------------------------- */
 
 .toasts {

@@ -123,7 +123,7 @@ const rooms = [];
 function join(code, nick, opts = {}) {
   const r = new Room({
     code,
-    me: { clientId: randomId(6), nick, color: '#ea696d', device: 'desktop' },
+    me: { clientId: randomId(6), nick, color: '#ea696d', device: 'desktop', shade: opts.shade ?? null },
     ratio: opts.ratio || '1:1',
     level: opts.level ?? 0,
     transportFactory: mesh.factory(),
@@ -210,6 +210,24 @@ test('the roster reaches everyone and names show up', async () => {
     ['ada', 'host']
   );
   assert.notDeepEqual(host.roster[0].slot, undefined);
+});
+
+test('the shade travels on hello, and black is never read as none', async () => {
+  const code = 'P2P5';
+  // Seeded at the constructor: a player who joins already holding a shade must
+  // show it without having to click anything.
+  const host = join(code, 'host', { shade: 7 });
+  await until(() => host.canPaint, 'host ready');
+  const a = join(code, 'ada');
+  await until(() => a.canPaint, 'guest ready');
+  await until(() => a.roster.find((p) => p.nick === 'host')?.shade === 7, "the hello shade to reach ada");
+
+  // 0 is black. A `||` anywhere on this path shows nothing for the most common
+  // first colour in the palette.
+  a.setProfile({ shade: 0 });
+  await until(() => host.roster.find((p) => p.id === a.me.clientId)?.shade === 0, 'black to reach the host');
+  assert.equal(host.roster.find((p) => p.nick === 'ada').shade, 0);
+  assert.equal(host.roster.find((p) => p.nick === 'host').shade, 7, 'each player keeps their own shade');
 });
 
 test('guests adopt the host clock, so remote events land on one timeline', async () => {

@@ -77,6 +77,34 @@ test('two players get a slot and never slot 0', async () => {
   assert.equal(b.roster.length, 2);
 });
 
+test('the shade a player holds survives the relay roster', async () => {
+  const code = 'SHADE';
+  const a = makeRoom(code, 'ada');
+  const b = makeRoom(code, 'boris');
+  await until(() => a.canPaint && b.canPaint, 'both players to be ready');
+
+  a.setProfile({ shade: 42 });
+  await until(() => b.roster.find((p) => p.id === a.me.clientId)?.shade === 42, "boris to see ada's shade");
+
+  // Index 0 is black, a real shade. Anything written as `msg.shade || fallback`
+  // passes the check above and fails here.
+  b.setProfile({ shade: 0 });
+  await until(() => a.roster.find((p) => p.id === b.me.clientId)?.shade === 0, 'ada to see boris pick black');
+
+  // A newcomer must be told the shades already in use, because the relay builds
+  // the roster it sends them from a field whitelist, and a field left out there
+  // is dropped without ever raising an error.
+  const c = makeRoom(code, 'cara');
+  await until(() => c.canPaint, 'cara to be ready');
+  await until(
+    () => {
+      const r = c.roster;
+      return r.find((p) => p.nick === 'ada')?.shade === 42 && r.find((p) => p.nick === 'boris')?.shade === 0;
+    },
+    'cara to inherit both shades'
+  );
+});
+
 test('a stroke from one player lands on every other player', async () => {
   const code = 'STROKE1';
   const a = makeRoom(code, 'ada');

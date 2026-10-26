@@ -66,7 +66,9 @@ export class Room extends Emitter {
   }) {
     super();
     this.code = code;
-    this.me = { clientId: me.clientId, nick: me.nick, color: me.color, device: me.device, slot: null };
+        // `color` is the avatar hue chosen at the gate; `shade` is the palette index
+    // they are painting with. They are different things and travel together.
+    this.me = { clientId: me.clientId, nick: me.nick, color: me.color, device: me.device, shade: me.shade ?? null, slot: null };
     this.clock = new RoomClock();
     this.design = new Design(item || itemIdForBoard(ratio, level));
     // The display copy is a browser concern; the relay never makes one.
@@ -143,6 +145,7 @@ export class Room extends Emitter {
       nick: this.me.nick,
       color: this.me.color,
       device: this.me.device,
+      shade: this.me.shade,
       seen: Date.now(),
     });
     this._timers.push(
@@ -164,7 +167,7 @@ export class Room extends Emitter {
     }
     if (s === 'online') {
       // Announce ourselves; the authority answers with our slot + the picture.
-      this._send({ k: 'hello', nick: this.me.nick, color: this.me.color, device: this.me.device });
+      this._send({ k: 'hello', ...this._identity() });
       if (!this.authority) this._send({ k: 'sync-req' });
       // The interval below cannot fire before the socket opens, so ask now.
       this._sendTimeReq();
@@ -186,7 +189,7 @@ export class Room extends Emitter {
       this._broadcastRoster();
       this._send({ k: 'state-hdr', version: this.design.version, checksum: this.design.checksum(), seq: this.lamport });
     } else {
-      this._send({ k: 'hello', nick: this.me.nick, color: this.me.color, device: this.me.device });
+      this._send({ k: 'hello', ...this._identity() });
       this._send({ k: 'sync-req' });
     }
     this.emit('authority', now);
@@ -393,9 +396,18 @@ export class Room extends Emitter {
     this._send({ k: 'blocks', f: faceIdx, flags: flagsB64, seq: this.nextSeq() });
   }
 
+  /**
+   * The identity a room knows us by. One shape, used by `hello` and `profile`,
+   * so the two can never drift apart and disagree about who is holding which
+   * shade.
+   */
+  _identity() {
+    return { nick: this.me.nick, color: this.me.color, device: this.me.device, shade: this.me.shade };
+  }
+
   setProfile(patch) {
     let touched = false;
-    for (const key of ['nick', 'color', 'device']) {
+    for (const key of ['nick', 'color', 'device', 'shade']) {
       const v = patch[key];
       if (v !== undefined && v !== this.me[key]) {
         this.me[key] = v;
@@ -404,9 +416,9 @@ export class Room extends Emitter {
     }
     if (!touched) return;
     const e = this._roster.get(this.me.clientId);
-    if (e) Object.assign(e, { nick: this.me.nick, color: this.me.color, device: this.me.device });
+    if (e) Object.assign(e, this._identity());
     if (this.authority) this._broadcastRoster();
-    this._send({ k: 'profile', nick: this.me.nick, color: this.me.color, device: this.me.device });
+    this._send({ k: 'profile', ...this._identity() });
     this.emit('self', { ...this.me });
   }
 
@@ -508,6 +520,8 @@ export class Room extends Emitter {
         nick: msg.nick || 'guest',
         color: msg.color || '#ea696d',
         device: msg.device || 'desktop',
+        // Index 0 is a real shade (black), so test the type, not truthiness.
+        shade: Number.isInteger(msg.shade) ? msg.shade : null,
         seen: Date.now(),
       });
       this._broadcastRoster();
@@ -517,6 +531,7 @@ export class Room extends Emitter {
         nick: msg.nick || this._roster.get(clientId).nick,
         color: msg.color || this._roster.get(clientId).color,
         device: msg.device || this._roster.get(clientId).device,
+        shade: Number.isInteger(msg.shade) ? msg.shade : this._roster.get(clientId).shade,
         seen: Date.now(),
       });
     }
@@ -545,7 +560,15 @@ export class Room extends Emitter {
     this._roster = new Map();
     for (const r of roster.slice(0, CONFIG.limits.maxRoster)) {
       if (!r || !r.id) continue;
-      this._roster.set(r.id, { seen: prev.get(r.id)?.seen ?? Date.now(), ...r });
+      const was = prev.get(r.id);
+      // Seed from what we already knew, then let the payload overwrite it. An
+      // older room host sends no `shade` key at all, and rebuilding the map from
+      // scratch would silently drop a legend that was working a second ago.
+      this._roster.set(r.id, {
+        seen: was?.seen ?? Date.now(),
+        shade: was?.shade ?? null,
+        ...r,
+      });
     }
     const mine = this._roster.get(this.me.clientId);
     if (mine && mine.slot != null) this.me.slot = mine.slot;
@@ -559,6 +582,7 @@ export class Room extends Emitter {
       nick: msg.nick ?? e.nick,
       color: msg.color ?? e.color,
       device: msg.device ?? e.device,
+      shade: msg.shade !== undefined ? msg.shade : e.shade,
       seen: Date.now(),
     });
     this.emit('roster', this.roster);
@@ -729,7 +753,7 @@ export class Room extends Emitter {
     } else {
       // Nobody to ask yet? Keep nudging until we have a slot.
       if (this.me.slot == null && this.status === 'online') {
-        this._send({ k: 'hello', nick: this.me.nick, color: this.me.color, device: this.me.device });
+        this._send({ k: 'hello', ...this._identity() });
       }
     }
     this.emit('tick');

@@ -20,6 +20,7 @@ import { SingleFaceDesign } from '../assets/js/game/design.js';
 import { History, patchWrite } from '../assets/js/game/history.js';
 import { Input, TOOLS, paintColorFor } from '../assets/js/input.js';
 import { fadeShade, FADE_STEPS } from '../assets/js/color/science.js';
+import { textCells } from '../assets/js/game/pixeltext.js';
 
 const SCALE = 4;
 
@@ -802,6 +803,119 @@ test('a tolerant fill does not leak from a shade into the empty cells around it'
 
   assert.equal(grid.color[grid.idx(2, 2)], 16, 'the one cell it was asked to fill');
   assert.equal([...grid.color].filter((c) => c === 16).length, 1, 'and nothing else');
+  input.destroy();
+});
+
+test('a tap paints the word as cells, in exactly one op', () => {
+  const { input, grid, room } = makeInput({ state: { tool: TOOLS.TEXT, text: 'I', textSize: 1 } });
+  input.onDown(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+  input.onUp(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+
+  // 'I' is 15 ink cells in the 5x7 box. Anything else painted is a bug.
+  assert.equal([...grid.color].filter((c) => c === 16).length, 15, 'the glyph cells and nothing else');
+  assert.equal(room.ops.length, 1, 'one op for the whole word');
+  assert.equal(room.ops[0].color, 16, 'the shade the player is holding, not a hex');
+  assert.equal(room.ops[0].cells.length, 15);
+  input.destroy();
+});
+
+test('the text tool paints a palette index, which is the thing that shipped wrong once', () => {
+  assert.equal(paintColorFor({ tool: TOOLS.TEXT, colorIdx: 16 }), 16);
+  // Handing the grid a hex silently reads as 0, which is "empty": the stroke
+  // looks like it painted nothing and no error is thrown anywhere. It throws.
+  assert.throws(() => paintColorFor({ tool: TOOLS.TEXT, colorIdx: '#e95e2b' }), TypeError);
+  assert.throws(() => paintColorFor({ tool: TOOLS.TEXT, colorIdx: 999 }), RangeError);
+});
+
+test('an empty text box refuses the tap and says why', () => {
+  const { input, grid, room } = makeInput({ state: { tool: TOOLS.TEXT, text: '' } });
+  input.onDown(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE }));
+  input.onUp(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE }));
+
+  assert.equal([...grid.color].some((c) => c !== 0), false, 'nothing painted');
+  assert.equal(room.ops.length, 0);
+  assert.ok(room.events.includes('notice'), 'and the player is told, not left guessing');
+  input.destroy();
+});
+
+test('a character the font has no glyph for is left out and named', () => {
+  const { input, grid, room } = makeInput({ state: { tool: TOOLS.TEXT, text: 'Aï', textSize: 1 } });
+  input.onDown(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+  assert.ok(room.events.includes('notice'), 'the dropped glyph is reported');
+  assert.equal(
+    [...grid.color].filter((c) => c === 16).length,
+    textCells('A', 1).length,
+    'the letter it does know still paints'
+  );
+  input.destroy();
+});
+
+test('a bigger size is the same word in blocks, not a different word', () => {
+  // A 2x 'S' is 10x14 cells, so this needs a face big enough that the count is
+  // the glyph and not a clip.
+  const one = makeInput({ grid: [30, 30], state: { tool: TOOLS.TEXT, text: 'S', textSize: 1 } });
+  one.input.onDown(pe({ clientX: 15 * SCALE, clientY: 15 * SCALE }));
+  const two = makeInput({ grid: [30, 30], state: { tool: TOOLS.TEXT, text: 'S', textSize: 2 } });
+  two.input.onDown(pe({ clientX: 15 * SCALE, clientY: 15 * SCALE }));
+
+  const n1 = [...one.grid.color].filter((c) => c === 16).length;
+  const n2 = [...two.grid.color].filter((c) => c === 16).length;
+  assert.equal(n2, n1 * 4, 'every cell became a 2x2 block');
+  assert.equal(two.room.ops.length, 1, 'still one op');
+  one.input.destroy();
+  two.input.destroy();
+});
+
+test('a word aimed off the edge slides back inside instead of losing letters', () => {
+  const { input, grid } = makeInput({ state: { tool: TOOLS.TEXT, text: 'I', textSize: 1 } });
+  input.onDown(pe({ clientX: 9 * SCALE, clientY: 9 * SCALE }));
+  // 15 cells is the whole glyph. A clip at the edge would have eaten the tail.
+  assert.equal([...grid.color].filter((c) => c === 16).length, 15, 'nothing lost to the border');
+  input.destroy();
+});
+
+test('a word wider than the face says so instead of painting half of it quietly', () => {
+  const { input, room } = makeInput({ grid: [8, 8], state: { tool: TOOLS.TEXT, text: 'HELLO', textSize: 1 } });
+  input.onDown(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE }));
+  assert.ok(room.events.includes('notice'), 'told before, not after');
+  const painted = [...input._grid.color].filter((c) => c === 16).length;
+  assert.ok(painted > 0 && painted < textCells('HELLO', 1).length, 'and it is honestly clipped');
+  input.destroy();
+});
+
+test('mirror painting puts the word on both sides in one op', () => {
+  const { input, grid, room } = makeInput({
+    state: { tool: TOOLS.TEXT, text: 'I', textSize: 1, mirror: 1 },
+  });
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 5 * SCALE }));
+  assert.equal(room.ops.length, 1, 'both halves are still one action');
+  assert.equal([...grid.color].filter((c) => c === 16).length, 30, 'the word and its mirror');
+  input.destroy();
+});
+
+test('one tap of text is one undo step', () => {
+  const { input, grid, history } = makeInput({ state: { tool: TOOLS.TEXT, text: 'I', textSize: 1 } });
+  input.onDown(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+
+  assert.equal(history.past.length, 1);
+  const entry = history.undo();
+  assert.equal(entry.label, 'text');
+  const { indices, values } = patchWrite(entry);
+  assert.equal(indices.length, 15);
+  // History is a pure stack: it records what the cells held beforehand and the
+  // app writes it back. So the assertion is about the capture, not the board.
+  assert.ok([...values].every((v) => v === 0), 'undo holds what the cells held before: blank');
+  const back = history.redo();
+  assert.equal([...patchWrite(back).values].filter((v) => v === 16).length, 15, 'redo puts the word back');
+  input.destroy();
+});
+
+test('a text tap is blocked while the room has not handed you a slot', () => {
+  const { input, grid, room } = makeInput({ state: { tool: TOOLS.TEXT, text: 'I', textSize: 1 } });
+  room.canPaint = false;
+  input.onDown(pe({ clientX: 5 * SCALE, clientY: 5 * SCALE }));
+  assert.ok(room.events.includes('blocked'), 'the same refusal every writing tool gets');
+  assert.equal([...grid.color].some((c) => c !== 0), false);
   input.destroy();
 });
 

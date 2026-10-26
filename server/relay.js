@@ -57,6 +57,9 @@ class RelayRoom {
       nick: profile.nick || m.nick || 'player',
       color: profile.color || m.color || '#ea696d',
       device: profile.device || m.device || 'desktop',
+      // The palette shade they are painting with, for the player legend. Index 0
+      // is a real shade, so this cannot use `||`.
+      shade: profile.shade !== undefined ? profile.shade : m.shade ?? null,
     });
     return m;
   }
@@ -64,7 +67,9 @@ class RelayRoom {
   roster() {
     return [...this.members.values()]
       .sort((a, b) => a.slot - b.slot)
-      .map(({ id, slot, nick, color, device }) => ({ id, slot, nick, color, device }));
+      // Every field the clients render has to be listed here: `roster()` is a
+      // whitelist, and a field left out is dropped without a sound.
+      .map(({ id, slot, nick, color, device, shade }) => ({ id, slot, nick, color, device, shade }));
   }
 
   /**
@@ -206,7 +211,7 @@ export function createServer(opts = {}) {
 
       switch (msg.k) {
         case 'hello': {
-          room.addMember(ws, { ...profile, nick: msg.nick, color: msg.color, device: msg.device });
+          room.addMember(ws, { ...profile, nick: msg.nick, color: msg.color, device: msg.device, shade: msg.shade });
           const s = room.snapshot();
           room.send(ws, { ...s, to: me.id, slot: me.slot });
           room.fanout({ k: 'roster', roster: room.roster() }, me.id);
@@ -285,7 +290,12 @@ export function createServer(opts = {}) {
           return;
         }
         case 'profile': {
-          Object.assign(me, { nick: msg.nick ?? me.nick, color: msg.color ?? me.color, device: msg.device ?? me.device });
+          Object.assign(me, {
+            nick: msg.nick ?? me.nick,
+            color: msg.color ?? me.color,
+            device: msg.device ?? me.device,
+            shade: msg.shade ?? me.shade,
+          });
           room.fanout({ k: 'roster', roster: room.roster() });
           return;
         }

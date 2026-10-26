@@ -1,0 +1,37 @@
+bucket      open  124->  84 (  32%) caps  1/ 1 tris 1392->1432 | area 14.49% slivers 2->2 bad 0 4ms
+             rim n= 40 face crown    warp  0.030  turn  0.33 -> CAP
+cap         open  112-> 112 (   0%) caps  0/ 1 tris 1358->1358 | area 0.00% slivers 0->0 bad 0 3ms
+             rim n= 66 face rear     warp  0.624  turn  0.88 -> leave
+dress       open  206-> 188 (   9%) caps  2/ 4 tris 1393->1411 | area 1.55% slivers 0->0 bad 0 2ms
+             rim n=  9 face inner    warp  0.094  turn  0.98 -> CAP
+             rim n=  6 face inner    warp  0.283  turn  1.14 -> leave
+             rim n=  9 face inner    warp  0.094  turn  0.98 -> CAP
+             rim n=  6 face inner    warp  0.283  turn  1.14 -> leave
+maryjanes   open  118->  50 (  58%) caps  2/ 2 tris 1400->1468 | area 19.20% slivers 0->0 bad 0 1ms
+             rim n= 34 face sole     warp  0.018  turn  1.10 -> CAP
+             rim n= 34 face sole     warp  0.018  turn  1.10 -> CAP
+shoes       open  144->  92 (  36%) caps  2/ 2 tris 1396->1448 | area 10.49% slivers 0->0 bad 0 1ms
+             rim n= 26 face sole     warp  0.029  turn  0.04 -> CAP
+             rim n= 26 face sole     warp  0.063  turn  0.04 -> CAP
+shorts      open  144-> 144 (   0%) caps  0/ 2 tris 1374->1374 | area 0.00% slivers 0->0 bad 0 2ms
+             rim n= 72 face front    warp  0.204  turn  0.64 -> leave
+             rim n= 72 face back     warp  0.206  turn  0.66 -> leave
+skirt       open  126-> 126 (   0%) caps  0/ 0 tris 1354->1354 | area 0.00% slivers 0->0 bad 0 1ms
+sweat       open  176-> 124 (  30%) caps  4/ 6 tris 1390->1442 | area 8.64% slivers 0->0 bad 0 2ms
+             rim n= 62 face front    warp  0.242  turn  0.45 -> leave
+             rim n= 62 face back     warp  0.255  turn  0.45 -> leave
+             rim n= 16 face sleeve   warp  0.060  turn  0.84 -> CAP
+             rim n= 10 face sleeve   warp  0.094  turn  0.59 -> CAP
+             rim n= 16 face sleeve   warp  0.060  turn  0.84 -> CAP
+             rim n= 10 face sleeve   warp  0.094  turn  0.59 -> CAP
+tank        open  133-> 133 (   0%) caps  0/ 0 tris 1271->1271 | area 0.00% slivers 2->2 bad 0 1ms
+trousers    open  184->   0 ( 100%) caps  2/ 2 tris 1398->1582 | area 87.64% slivers 0->0 bad 0 1ms
+             rim n= 92 face front    warp  0.125  turn  0.75 -> CAP
+             rim n= 92 face back     warp  0.126  turn  0.83 -> CAP
+tshirt      open  218-> 138 (  37%) caps  4/ 4 tris 1350->1430 | area 16.36% slivers 2->2 bad 0 1ms
+             rim n= 20 face sleeveL  warp  0.049  turn  0.98 -> CAP
+             rim n= 20 face sleeveL  warp  0.193  turn  0.70 -> CAP
+             rim n= 20 face sleeveR  warp  0.047  turn  1.02 -> CAP
+             rim n= 20 face sleeveR  warp  0.193  turn  0.70 -> CAP
+
+total open edges 1685 -> 1191 (29.3% closed), 17 openings capped

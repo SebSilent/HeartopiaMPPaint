@@ -25,7 +25,15 @@ const TYPES = {
 
 http
   .createServer((req, res) => {
-    const url = new URL(req.url, 'http://localhost');
+    // A malformed request line must not kill the server: one bad URL from a
+    // proxy or a typo'd client used to take the whole dev server down.
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch (_) {
+      res.writeHead(400).end('bad request');
+      return;
+    }
     let rel = decodeURIComponent(url.pathname);
     if (rel === '/' || rel === '') rel = '/index.html';
     const file = path.join(ROOT, path.normalize(rel).replace(/^(\.\.[/\\])+/, ''));

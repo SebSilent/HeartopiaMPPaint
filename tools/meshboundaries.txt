@@ -1,0 +1,71 @@
+
+== bucket: 1392 tris, 601 verts | dup-vert 0 | slivers 2 | >25x median 0 (median 6.58c2)
+   OPENING  n= 41 area=  1388c2 perim=137.1c round=0.0739 span=44.8c at [0.00,0.13,0.00]
+   chains 4 (n>=3 thin: 2)
+
+== cap: 1358 tris, 664 verts | dup-vert 0 | slivers 0 | >25x median 0 (median 3.84c2)
+   crack    n= 67 area=  1561c2 perim=190.8c round=0.0429 span=55.4c at [0.00,0.10,-0.03]
+   chains 1 (n>=3 thin: 0)
+
+== dress: 1393 tris, 773 verts | dup-vert 0 | slivers 0 | >25x median 0 (median 11.32c2)
+   crack    n= 10 area=   122c2 perim=44.5c round=0.0616 span=17.9c at [-0.18,0.47,-0.01]
+   crack    n=  7 area=    21c2 perim=19.6c round=0.0562 span=7.3c at [-0.43,0.18,-0.02]
+   crack    n= 10 area=   122c2 perim=44.5c round=0.0616 span=17.9c at [0.18,0.47,-0.01]
+   crack    n=  7 area=    21c2 perim=19.6c round=0.0562 span=7.3c at [0.43,0.18,-0.02]
+   chains 19 (n>=3 thin: 0)
+
+== maryjanes: 1400 tris, 616 verts | dup-vert 0 | slivers 0 | >25x median 0 (median 10.62c2)
+   OPENING  n= 35 area=  1410c2 perim=145.9c round=0.0663 span=57.7c at [-0.22,-0.07,0.03]
+   OPENING  n= 35 area=  1410c2 perim=145.9c round=0.0663 span=57.7c at [0.22,-0.07,0.03]
+   chains 17 (n>=3 thin: 2)
+
+== shoes: 1396 tris, 624 verts | dup-vert 0 | slivers 0 | >25x median 0 (median 16.97c2)
+   OPENING  n= 27 area=  1225c2 perim=146.0c round=0.0574 span=59.4c at [-0.22,-0.21,0.05]
+   OPENING  n= 27 area=  1224c2 perim=147.1c round=0.0565 span=59.3c at [0.22,-0.20,0.05]
+   chains 39 (n>=3 thin: 0)
+
+== shorts: 1374 tris, 749 verts | dup-vert 0 | slivers 0 | >25x median 0 (median 8.15c2)
+   OPENING  n= 73 area=  3762c2 perim=281.9c round=0.0473 span=89.7c at [-0.00,-0.04,0.05]
+   OPENING  n= 73 area=  3763c2 perim=281.8c round=0.0474 span=89.7c at [0.00,-0.04,-0.05]
+   chains 0 (n>=3 thin: 0)
+
+== skirt: 1354 tris, 730 verts | dup-vert 0 | slivers 0 | >25x median 0 (median 9.07c2)
+   chains 12 (n>=3 thin: 2)
+
+== sweat: 1390 tris, 758 verts | dup-vert 0 | slivers 0 | >25x median 0 (median 13.98c2)
+   OPENING  n= 63 area=  4418c2 perim=307.7c round=0.0467 span=96.8c at [-0.00,-0.00,0.06]
+   OPENING  n= 63 area=  4425c2 perim=309.0c round=0.0463 span=96.8c at [0.00,0.00,-0.06]
+   OPENING  n= 17 area=   625c2 perim=90.8c round=0.0759 span=31.7c at [-0.28,0.12,0.00]
+   crack    n= 11 area=   211c2 perim=54.4c round=0.0714 span=20.2c at [-0.65,-0.28,0.00]
+   OPENING  n= 17 area=   625c2 perim=90.8c round=0.0759 span=31.7c at [0.28,0.12,0.00]
+   crack    n= 11 area=   211c2 perim=54.4c round=0.0714 span=20.7c at [0.65,-0.29,0.01]
+   chains 0 (n>=3 thin: 0)
+
+== tank: 1271 tris, 699 verts | dup-vert 0 | slivers 2 | >25x median 0 (median 8.71c2)
+   chains 23 (n>=3 thin: 6)
+
+== trousers: 1398 tris, 783 verts | dup-vert 0 | slivers 0 | >25x median 0 (median 8.41c2)
+   crack    n= 93 area=  3925c2 perim=403.5c round=0.0241 span=116.4c at [-0.00,-0.07,0.02]
+   crack    n= 93 area=  3927c2 perim=402.5c round=0.0242 span=115.5c at [0.00,-0.06,-0.02]
+   chains 0 (n>=3 thin: 0)
+
+== tshirt: 1350 tris, 770 verts | dup-vert 0 | slivers 2 | >25x median 0 (median 10.51c2)
+   OPENING  n= 21 area=   620c2 perim=91.7c round=0.0738 span=37.5c at [-0.28,0.17,0.00]
+   OPENING  n= 21 area=   482c2 perim=84.0c round=0.0684 span=27.5c at [-0.42,0.02,0.00]
+   OPENING  n= 21 area=   620c2 perim=91.7c round=0.0737 span=37.2c at [0.28,0.17,0.00]
+   OPENING  n= 21 area=   482c2 perim=84.0c round=0.0684 span=27.5c at [0.42,0.02,0.00]
+   chains 4 (n>=3 thin: 1)
+
+====================================================================================================
+item        tris  dupV sliver  big25x  cycles open  crack  crackArea  chains
+bucket       1392    0      2       0       1    1      0         0      4
+cap          1358    0      0       0       1    0      1      1561      1
+dress        1393    0      0       0       4    0      4       286     19
+maryjanes    1400    0      0       0       2    2      0         0     17
+shoes        1396    0      0       0       2    2      0         0     39
+shorts       1374    0      0       0       2    2      0         0      0
+skirt        1354    0      0       0       0    0      0         0     12
+sweat        1390    0      0       0       6    4      2       422      0
+tank         1271    0      2       0       0    0      0         0     23
+trousers     1398    0      0       0       2    0      2      7852      0
+tshirt       1350    0      2       0       4    4      0         0      4

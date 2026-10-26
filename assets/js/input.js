@@ -39,6 +39,7 @@ import {
 } from './game/shapes.js';
 import { newPatch, patchAdd, sealPatch, finishCapture } from './game/history.js';
 import { stampOffsets } from './game/stamps.js';
+import { shadeDeltaE, fadeShade, FADE_STEPS } from './color/science.js';
 
 export const TOOLS = {
   BRUSH: 'brush',
@@ -307,6 +308,10 @@ export class Input {
       last: { x: cell.x, y: cell.y },
       gen: ++sentGen,
       wire: [],
+      // An airbrush stroke lays down several tones at once, and the wire
+      // carries one colour per op, so its unsent backlog is split by tone
+      // instead of being a single list. Null for every other tool.
+      wireByTone: isAir(st) ? new Map() : null,
       patch: null,
       recorded: false,
       type,
@@ -360,7 +365,7 @@ export class Input {
     this._paint(pid, s.last.x, s.last.y, cell.x, cell.y);
     s.last = { x: cell.x, y: cell.y };
     if (type === 'mouse') this.hover = cell;
-    if (s.wire.length >= FLUSH_CELLS) this._flush(pid);
+    if (this._pending(s) >= FLUSH_CELLS) this._flush(pid);
   }
 
   onUp(e) {
@@ -410,9 +415,11 @@ export class Input {
     const g = this._grid;
     let base;
     const cells = dabOffsets(st);
-    const spray = !cells && isSpray(st);
+    const spray = !cells && isScatter(st);
+    const air = spray && isAir(st);
+    let seeds = null;
     if (cells || spray) {
-      const seeds = dabSeeds(x0, y0, x1, y1);
+      seeds = dabSeeds(x0, y0, x1, y1);
       if (spray) {
         // One fresh scatter per dab: a spray that repeats one pattern along
         // the drag is a texture, not a spray. Each dab stamps only its own
@@ -447,15 +454,66 @@ export class Input {
     // Record before writing: the value we need is the one that is there now.
     if (!s.patch) s.patch = newPatch(this.room.design.active);
     patchAdd(s.patch, this.room.design, fresh);
-    this._write(fresh, s.color, s.seq);
-    for (const i of fresh) s.wire.push(i);
+    if (air) this._paintAir(s, g, fresh, seeds, st);
+    else {
+      this._write(fresh, s.color, s.seq);
+      for (const i of fresh) s.wire.push(i);
+    }
     this.view.markDirty();
+  }
+
+  /**
+   * Lay one batch of airbrush dots. A dot's tone is how far it sits from the
+   * nearest dab centre against the dab's own radius, so a drag fades along its
+   * length rather than only at its ends, and the mirrored centres count too -
+   * a mirrored stroke has to fade from its own centre, not the one across the
+   * board.
+   *
+   * The tones are real palette shades, never invented ones, which is what keeps
+   * the result exportable as the game would build it.
+   */
+  _paintAir(s, g, fresh, seeds, st) {
+    const centres = mirrored(g, seeds, st.mirror);
+    const radius = Math.max(0.5, st.brush / 2);
+    const batch = new Map();
+    for (const i of fresh) {
+      const tone = fadeShade(s.color, airTone(i % g.w, (i / g.w) | 0, centres, radius));
+      let list = batch.get(tone);
+      if (!list) batch.set(tone, (list = []));
+      list.push(i);
+    }
+    for (const [tone, list] of batch) {
+      this._write(list, tone, s.seq);
+      let acc = s.wireByTone.get(tone);
+      if (!acc) s.wireByTone.set(tone, (acc = []));
+      for (const i of list) acc.push(i);
+    }
+  }
+
+  /** How many cells are waiting to go out. Both backlog shapes count. */
+  _pending(s) {
+    if (!s.wireByTone) return s.wire.length;
+    let n = 0;
+    for (const cells of s.wireByTone.values()) n += cells.length;
+    return n;
   }
 
   /** Send whatever has accumulated since the last batch. Records nothing. */
   _flush(pid) {
     const s = this.strokes.get(pid);
-    if (!s || !s.wire.length) return;
+    if (!s) return;
+    if (s.wireByTone) {
+      // One op per tone: the wire has no way to say "these cells in this
+      // colour, those in that one", and inventing a richer op would be a
+      // protocol change the other side of the wire does not speak.
+      for (const [tone, cells] of s.wireByTone) {
+        if (!cells.length) continue;
+        s.wireByTone.set(tone, []);
+        this.room.sendOp(cells, tone, s.seq);
+      }
+      return;
+    }
+    if (!s.wire.length) return;
     const cells = s.wire;
     s.wire = [];
     this.room.sendOp(cells, s.color, s.seq);
@@ -518,11 +576,43 @@ export class Input {
     this.view.markDirty();
   }
 
+  /**
+   * Which shades a bucket may spread to, as a table over the palette.
+   *
+   * The comparison is ΔE(2000) between the two shades, not the difference
+   * between their indices: the palette is ordered by family, so index distance
+   * is a measure of where a colour sits in a list. And it is built once per
+   * click over ~126 shades rather than evaluated per cell, because a face is
+   * thousands of cells and deltaE2000 is not a cheap function.
+   */
+  _shadeMatcher(from, tol) {
+    if (!tol) return null;
+    if (!this._matchCache || this._matchCache.from !== from || this._matchCache.tol !== tol) {
+      const ok = new Uint8Array(FLAT_COLORS.length);
+      for (let c = 0; c < FLAT_COLORS.length; c++) {
+        const d = shadeDeltaE(from, c);
+        ok[c] = d !== null && d <= tol ? 1 : 0;
+      }
+      // Empty is not a colour, it is the absence of one. A tolerance must never
+      // swallow it, or a loose bucket floods the whole blank face.
+      ok[0] = 0;
+      this._matchCache = { from, tol, ok };
+    }
+    return this._matchCache.ok;
+  }
+
   _floodAt(x, y) {
     const st = this.getState();
+    const from = this._grid.colorAt(Math.floor(x), Math.floor(y));
+    // Tolerance is a statement about colours, and empty is not a colour. A
+    // loose bucket aimed at blank space would otherwise flood every unpainted
+    // cell on the face, which reads as the button being broken.
+    const tol = from === 0 ? 0 : st.fillTolerance | 0;
+    const ok = this._shadeMatcher(from, tol);
     const cells = fillCells(this._grid, x, y, st.colorIdx, {
       contiguous: !st.fillGlobal,
-      tolerance: st.fillTolerance | 0,
+      tolerance: tol,
+      similar: ok ? (c) => c === from || ok[c] === 1 : null,
     });
     if (!cells.length) return;
     this._applyPairs(cells, paintColorFor(st), 'fill');
@@ -725,8 +815,32 @@ function dabSeeds(x0, y0, x1, y1) {
  * the round brush it only exists past size 1, where the plain square stroke
  * already is one cell.
  */
-function isSpray(st) {
-  return st.brushShape === 'spray' && !st.stamp && st.brush > 1;
+function isScatter(st) {
+  return (st.brushShape === 'spray' || st.brushShape === 'air') && !st.stamp && st.brush > 1;
+}
+
+/**
+ * The airbrush is the spray's scatter with a tone ramp on it: the same dots,
+ * but a dot's shade fades toward white the further it sits from the dab centre.
+ * The board has no alpha, so "soft" has to be made out of paler paint, and
+ * every tone it uses is a shade the game already ships.
+ */
+function isAir(st) {
+  return st.brushShape === 'air' && !st.stamp && st.brush > 1;
+}
+
+/**
+ * How far a dot sits from the middle of its dab, as a step of FADE_STEPS: 0 at
+ * the centre, FADE_STEPS at the rim. The board has no alpha, so this is what a
+ * soft edge means here - paler paint, not translucent paint.
+ */
+function airTone(cx, cy, centres, radius) {
+  let best = Infinity;
+  for (const [sx, sy] of centres) {
+    const d = Math.hypot(cx - sx, cy - sy);
+    if (d < best) best = d;
+  }
+  return Math.min(FADE_STEPS, Math.floor((best / radius) * FADE_STEPS));
 }
 
 /**
@@ -736,7 +850,7 @@ function isSpray(st) {
  * breaks.
  */
 function previewDab(st) {
-  if (isSpray(st)) return roundOffsets(st.brush);
+  if (isScatter(st)) return roundOffsets(st.brush);
   return dabOffsets(st);
 }
 

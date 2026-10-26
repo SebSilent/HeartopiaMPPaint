@@ -828,6 +828,27 @@ input[type="range"].slider::-moz-range-thumb {
 /* No tool options means no row at all, not an empty one taking the gap. */
 .opts:empty { display: none; }
 
+/* The Text tool's box. It lives on the wood, so it is a control of this dock and
+   not a web form field: same 2px border and height as the buttons beside it, and
+   the caret is the accent so you can see where a long word is being typed. */
+.text-in {
+  height: 32px;
+  flex: 1 1 150px;
+  min-width: 120px;
+  padding: 0 9px;
+  border: 2px solid var(--wood-hi);
+  background: var(--wood-dark);
+  color: var(--on-wood);
+  font: inherit;
+  font-size: 0.86rem;
+  caret-color: var(--accent);
+}
+.text-in::placeholder { color: var(--on-wood-2); opacity: 0.85; }
+.text-in:focus { outline: 2px solid var(--accent); outline-offset: 1px; border-color: var(--accent-deep); }
+/* What the string currently means, in cells. Quiet until it is wrong. */
+.text-dim { font-size: 0.75rem; font-weight: 800; color: var(--on-wood-2); letter-spacing: 0.02em; }
+.text-dim.bad { color: var(--accent); }
+
 .tools { grid-area: tools; display: flex; flex-direction: column; gap: 6px; }
 .tool {
   display: flex;

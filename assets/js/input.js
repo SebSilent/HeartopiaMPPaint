@@ -40,6 +40,7 @@ import {
 import { newPatch, patchAdd, sealPatch, finishCapture } from './game/history.js';
 import { stampOffsets } from './game/stamps.js';
 import { shadeDeltaE, fadeShade, FADE_STEPS } from './color/science.js';
+import { measure as measureText, prepare as prepareText, textCells } from './game/pixeltext.js';
 
 export const TOOLS = {
   BRUSH: 'brush',
@@ -50,10 +51,13 @@ export const TOOLS = {
   RECT: 'rect',
   ELLIPSE: 'ellipse',
   POLYGON: 'polygon',
+  TEXT: 'text',
 };
 
 const PAINT_TOOLS = new Set([TOOLS.BRUSH, TOOLS.ERASER]);
 const DRAG_SHAPES = new Set([TOOLS.LINE, TOOLS.RECT, TOOLS.ELLIPSE]);
+/** Tools that place a whole block with one click instead of dragging. */
+const PLACE_TOOLS = new Set([TOOLS.TEXT]);
 
 const FLUSH_CELLS = 12;
 const FLUSH_MS = 55;
@@ -283,6 +287,7 @@ export class Input {
       return;
     }
     if (st.tool === TOOLS.FILL) return this._floodAt(x, y);
+    if (st.tool === TOOLS.TEXT) return this._placeText(x, y);
     if (st.tool === TOOLS.POLYGON) {
       if (this.poly.length && Math.hypot(x - this.poly[0][0], y - this.poly[0][1]) < 2 && this.poly.length > 2) {
         return this._closePolygon();
@@ -577,6 +582,68 @@ export class Input {
   }
 
   /**
+   * Where a text block lands, as cell pairs, aimed at one cell.
+   *
+   * The block is centred on the tap and then slid back inside the face: a
+   * signature aimed at the edge of a small board would otherwise lose its last
+   * letters to a clip nobody asked for, and the game refuses those cells anyway.
+   * When the block is wider than the face there is nowhere to slide it, so the
+   * clip is honest and `_placeText` says so rather than pretending it fitted.
+   *
+   * One function because the ghost you aim and the cells that get committed must
+   * be the same arithmetic - the same rule `ui/importer.js` `fitRect()` follows.
+   */
+  _textPairs(st, x, y) {
+    const m = measureText(st.text, st.textSize);
+    if (!m.w || !m.h) return { pairs: [], w: m.w, h: m.h };
+    const g = this._grid;
+    const ax = Math.min(Math.max(Math.round(x - m.w / 2), 0), Math.max(0, g.w - m.w));
+    const ay = Math.min(Math.max(Math.round(y - m.h / 2), 0), Math.max(0, g.h - m.h));
+    const pairs = textCells(st.text, st.textSize).map(([cx, cy]) => [ax + cx, ay + cy]);
+    return { pairs, w: m.w, h: m.h };
+  }
+
+  _placeText(x, y) {
+    const st = this.getState();
+    const { pairs, w, h } = this._textPairs(st, x, y);
+    if (!pairs.length) {
+      this.room.emit('notice', 'Type something in the Text box first');
+      return;
+    }
+    const dropped = prepareText(st.text).skipped;
+    if (dropped.length) {
+      this.room.emit('notice', `No pixel letter for ${dropped.join(' ')} - it was left out`);
+    }
+    const g = this._grid;
+    if (w > g.w || h > g.h) {
+      this.room.emit('notice', `That is ${w}×${h} cells and this face is ${g.w}×${g.h}`);
+    }
+    const painted = mirrored(g, pairs, st.mirror);
+    if (!this._applyPairs(painted, paintColorFor(st), 'text')) {
+      // Every cell landed somewhere the game will not take paint. Saying
+      // nothing here is how a tool ends up looking broken with no error.
+      this.room.emit('notice', 'Nothing there for the game to paint');
+      return;
+    }
+    this.view.markDirty();
+  }
+
+  /** The aim line: the exact cells a tap would commit, at the pointer. */
+  _drawTextGhost(ctx, view, st) {
+    if (!this.hover) return;
+    const { pairs } = this._textPairs(st, Math.floor(this.hover.x), Math.floor(this.hover.y));
+    if (!pairs.length) return;
+    ctx.save();
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = st.colorHex;
+    for (const [x, y] of mirrored(view.grid, pairs, st.mirror)) {
+      const p = view.toScreen(x, y);
+      ctx.fillRect(p.x, p.y, view.scale, view.scale);
+    }
+    ctx.restore();
+  }
+
+  /**
    * Which shades a bucket may spread to, as a table over the palette.
    *
    * The comparison is ΔE(2000) between the two shades, not the difference
@@ -730,6 +797,12 @@ export class Input {
       ctx.restore();
     }
 
+    if (PLACE_TOOLS.has(st.tool)) {
+      // A block tool aims like a block, not like a brush tip.
+      this._drawTextGhost(ctx, view, st);
+      this._drawMirrorGuides(ctx, view, st);
+      return;
+    }
     if (DRAG_SHAPES.has(st.tool) || st.tool === TOOLS.POLYGON) return;
     const ink = st.tool === TOOLS.ERASER ? '#8a7a63' : st.colorHex;
     if (!ink) return;

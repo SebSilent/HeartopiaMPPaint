@@ -75,6 +75,11 @@ const state = {
   stamp: null,
   brushShape: 'square',
   sprayDensity: 0.25,
+  // The text tool's pending block. Kept in state rather than in the field
+  // because the tool row is rebuilt on every tool change, and a field that is
+  // rebuilt loses what it held.
+  text: '',
+  textSize: 1,
   shapeFilled: false,
   fillGlobal: false,
   fillTolerance: 0,
@@ -131,6 +136,19 @@ const actions = {
   },
   setSprayDensity: (d) => {
     state.sprayDensity = d;
+    ui.setTool(state.tool);
+  },
+  /**
+   * The text tool's string. Not sanitised here beyond what the font itself
+   * refuses: unknown glyphs are dropped at draw time and the row says which, so
+   * a pasted emoji does not paint a word nobody meant.
+   */
+  setText: (t) => {
+    state.text = String(t == null ? '' : t);
+    ui._syncText();
+  },
+  setTextSize: (s) => {
+    state.textSize = clamp(s | 0, 1, 4) || 1;
     ui.setTool(state.tool);
   },
   /**
@@ -498,6 +516,9 @@ function wireRoom(r) {
   });
 
   r.on('blocked', () => ui.toast('Still connecting to the room…', 'warn', 1500));
+  // A tool that refuses to paint has to say why. Silent refusals are reported
+  // as the button being broken, and the button is never the problem.
+  r.on('notice', (msg) => ui.toast(String(msg || ''), 'warn', 2200));
 }
 
 let lastStatus = '';
@@ -1367,6 +1388,7 @@ const KEY_TOOLS = {
   r: TOOLS.RECT,
   o: TOOLS.ELLIPSE,
   p: TOOLS.POLYGON,
+  t: TOOLS.TEXT,
 };
 
 function bindKeys() {

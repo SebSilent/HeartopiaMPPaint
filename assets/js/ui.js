@@ -13,6 +13,7 @@ import { RATIOS, LEVELS, BRUSH_SIZES } from './presets.js';
 import { CATALOG, FAMILIES, FAMILY, findItem, cellTotal, itemIdForBoard, boardForItem } from './game/slots.js';
 import { clamp, escapeHtml, initials, makeRoomCode, normalizeRoomCode, readableInk, detectDevice } from './util.js';
 import { TOOLS } from './input.js';
+import { measure as measureText, prepare as prepareText } from './game/pixeltext.js';
 import { MODES as TRACE_MODES, BLOCK_SIZES } from './ui/blueprint.js';
 import { DITHER } from './ui/importer.js';
 
@@ -26,6 +27,7 @@ const ICONS = {
   rect: '<rect x="4" y="6" width="16" height="12"/>',
   ellipse: '<ellipse cx="12" cy="12" rx="8" ry="6"/>',
   polygon: '<path d="M12 3l8 6-3 10H7L4 9z"/>',
+  text: '<path d="M6 20l6-15 6 15"/><path d="M9 14h6"/>',
   grid: '<rect x="4" y="4" width="16" height="16"/><path d="M10 4v16M16 4v16M4 10h16M4 16h16"/>',
   mirror: '<path d="M12 3v18"/><path d="M9 7L4 12l5 5"/><path d="M15 7l5 5-5 5"/>',
   undo: '<path d="M9 14L4 9l5-5"/><path d="M4 9h9a5 5 0 010 10H8"/>',
@@ -74,6 +76,7 @@ const TOOL_DEFS = [
   ['rect', 'Rectangle', 'R'],
   ['ellipse', 'Ellipse', 'O'],
   ['polygon', 'Polygon', 'P'],
+  ['text', 'Text', 'T'],
 ];
 
 export class UI {
@@ -425,6 +428,28 @@ export class UI {
         'fillmatch'
       );
     }
+    if (st.tool === TOOLS.TEXT) {
+      // The string lives in state, not in the field, because the field is torn
+      // down and rebuilt every time the tool row changes - a brush size click
+      // would otherwise wipe what you had typed.
+      html +=
+        `<span class="dock-label">Text</span>` +
+        `<input id="textIn" class="text-in" type="text" maxlength="60" spellcheck="false"
+          autocomplete="off" placeholder="Type, then tap the board" aria-label="Text to paint">`;
+      html += row(
+        'Size',
+        chips('textsize', [
+          ['1', 'S', 'One board cell per pixel'],
+          ['2', 'M', 'Two cells per pixel'],
+          ['3', 'L', 'Three cells per pixel'],
+          ['4', 'XL', 'Four cells per pixel'],
+        ], String(st.textSize)),
+        'textsize'
+      );
+      // The block size is what you cannot see until it is too wide for the face,
+      // so it is stated before the first tap rather than refused after it.
+      html += `<span class="text-dim" id="textDim"></span>`;
+    }
     html += row(
       'Mirror',
       chips('mirror', [
@@ -448,13 +473,44 @@ export class UI {
       b.classList.toggle('active', Number(b.dataset.fillmatch) === (st.fillTolerance | 0));
     for (const b of e.toolOpts.querySelectorAll('[data-mirror]'))
       b.classList.toggle('active', b.dataset.mirror === ['off', 'x', 'y', 'xy'][st.mirror || 0]);
+    for (const b of e.toolOpts.querySelectorAll('[data-textsize]'))
+      b.classList.toggle('active', Number(b.dataset.textsize) === (st.textSize | 0));
+    this._syncText();
+  }
+
+  /**
+   * Echo what the Text box currently means: how many cells it will cover, and
+   * which characters the pixel font cannot draw. Called on every keystroke, so
+   * a player finds out before the tap, not after a partly-painted word.
+   */
+  _syncText() {
+    const box = document.getElementById('textIn');
+    const dim = document.getElementById('textDim');
+    if (!box || !dim) return;
+    const st = this.state;
+    if (document.activeElement !== box) box.value = st.text || '';
+    const { text, skipped } = prepareText(st.text);
+    const m = measureText(text, st.textSize);
+    if (!m.w) {
+      dim.textContent = '';
+      dim.classList.remove('bad');
+      return;
+    }
+    const size = `${m.w}×${m.h} cells`;
+    if (skipped.length) {
+      dim.textContent = `${size} - no letter for ${skipped.join(' ')}`;
+      dim.classList.add('bad');
+    } else {
+      dim.textContent = size;
+      dim.classList.remove('bad');
+    }
   }
 
   _wireToolOptions() {
     const e = this.el;
     e.toolOpts.addEventListener('click', (ev) => {
       const b = ev.target.closest(
-        'button[data-shape],button[data-density],button[data-fillmode],button[data-fillscope],button[data-fillmatch],button[data-mirror]'
+        'button[data-shape],button[data-density],button[data-fillmode],button[data-fillscope],button[data-fillmatch],button[data-mirror],button[data-textsize]'
       );
       if (!b) return;
       if (b.dataset.shape) this.actions.setBrushShape(b.dataset.shape);
@@ -465,8 +521,12 @@ export class UI {
       if (b.dataset.fillmatch !== undefined) this.actions.setFillTolerance(Number(b.dataset.fillmatch));
       if (b.dataset.fillscope) this.actions.setFillGlobal(b.dataset.fillscope === 'all');
       if (b.dataset.mirror) this.actions.setMirror(['off', 'x', 'y', 'xy'].indexOf(b.dataset.mirror));
+      if (b.dataset.textsize) this.actions.setTextSize(Number(b.dataset.textsize));
     });
+    // Delegation again: the row is rebuilt whenever the tool changes, so the
+    // field this listener needs is not the field that existed when it was bound.
     e.toolOpts.addEventListener('input', (ev) => {
+      if (ev.target && ev.target.id === 'textIn') this.actions.setText(ev.target.value);
     });
   }
 

@@ -160,7 +160,7 @@ export class Preview3D {
       const uc = [m.uv[ic * 2] * face.w, (1 - m.uv[ic * 2 + 1]) * face.h];
       // `two` marks a triangle that must be drawn from both sides: see the cull
       // note in draw() for why a cloth shell needs that.
-      const tri = { a, b, c, u: ua, v: ub, w2: uc, tex, lit, loop: null, face: face.id, a2: a[2], b2: b[2], c2: c[2], n, vn, two: true };
+      const tri = { a, b, c, u: ua, v: ub, w2: uc, tex, lit, loop: null, face: face.id, n, vn, two: true };
       tris.push(tri);
     }
     this.radius = Math.max(1, m.half * S);
@@ -215,9 +215,9 @@ export class Preview3D {
           // counts rows down from the top of the face, so the row is (1 - v) * h.
           const ty = (vv) => (1 - vv) * face.h;
           tri(tris, bilerp(corners, u0, v0), bilerp(corners, u1, v0), bilerp(corners, u1, v1),
-            [u0 * face.w, ty(v0)], [u1 * face.w, ty(v0)], [u1 * face.w, ty(v1)], tex, lit, loop, face.id);
+            [u0 * face.w, ty(v0)], [u1 * face.w, ty(v0)], [u1 * face.w, ty(v1)], tex, lit, loop, face.id, normal);
           tri(tris, bilerp(corners, u0, v0), bilerp(corners, u1, v1), bilerp(corners, u0, v1),
-            [u0 * face.w, ty(v0)], [u1 * face.w, ty(v1)], [u0 * face.w, ty(v1)], tex, lit, loop, face.id);
+            [u0 * face.w, ty(v0)], [u1 * face.w, ty(v1)], [u0 * face.w, ty(v1)], tex, lit, loop, face.id, normal);
         }
       }
       for (const v of corners) radius = Math.max(radius, Math.hypot(v[0], v[1], v[2]));
@@ -252,6 +252,31 @@ export class Preview3D {
   /** Forget the baked textures so the next build pulls fresh ones. */
   invalidate() {
     this._cache.clear();
+    this._dirty = true;
+  }
+
+  /**
+   * Unwind the canvas state after a draw died partway through a triangle.
+   *
+   * A textured triangle saves, clips to itself, paints, and restores. If
+   * something throws between the clip and the restore - a texture that went
+   * away, a context the browser took back - the clip stays live, and a clip is
+   * part of the state stack: setTransform does not clear it and neither does
+   * clearing the bitmap. Every frame after that paints inside one dead
+   * triangle, so the preview looks permanently broken even though the loop
+   * restarted happily. Re-assigning the size is the only thing that resets the
+   * stack, and it is cheap enough to be worth doing on a path that only runs
+   * when something already went wrong.
+   */
+  resetState() {
+    const cv = this.canvas;
+    // Step the size and come back, so the reset does not depend on whether this
+    // engine treats assigning the same width as a no-op.
+    cv.width = cv.width + 1;
+    cv.height = cv.height + 1;
+    cv.width = cv.width - 1;
+    cv.height = cv.height - 1;
+    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
     this._dirty = true;
   }
 
@@ -362,6 +387,12 @@ export class Preview3D {
       // costs; tools/perf.mjs measures it.
       let lit = t.lit;
       let lits = null;
+      // Which way is this triangle pointing, now that the model has been turned?
+      // The camera looks down -z and _project reports depth as `dist - z`, so a
+      // larger view-space z is nearer. A triangle whose oriented normal has
+      // positive z faces the camera.
+      const nz = t.n ? orient(t.n, this.yaw, this.pitch, 0)[2] : 0;
+      const front = nz >= 0;
       if (t.vn) {
         // Per-corner brightness, so the overlay can interpolate across the face
         // instead of stamping one flat value onto it.
@@ -370,22 +401,49 @@ export class Preview3D {
       } else if (t.n) {
         lit = 0.66 + 0.34 * Math.abs(dot3(norm3(orient(t.n, this.yaw, this.pitch, 0)), LIGHT));
       }
-      view.push({ t, p, q, r, z: (t.a2 + t.b2 + t.c2) / 3, lit, lits });
+      // The inside of a cloth shell is in shadow. A garment is one surface, so
+      // the lining is the same triangles seen from behind, and shading them by
+      // the same rule as the outside made the inside of a sleeve read as a
+      // second, brighter copy of the paint - which is most of what looked like
+      // seeing through the garment.
+      if (!front) {
+        lit *= 0.78;
+        if (lits) lits = lits.map((l) => l * 0.78);
+      }
+      // The sort key must be measured in the space the camera looks through.
+      // This used to be (a2+b2+c2)/3, the model's own z captured at build time,
+      // so orbiting never reordered anything: at yaw -24 (the default view) a
+      // panel's model z and its screen depth differ by its x, which on a dress
+      // is 84 cells - more than twice the garment's whole depth. Far surfaces
+      // painted over near ones and the preview looked see-through, "wall hack"
+      // exactly. p[2] is the oriented z that _project already computed.
+      view.push({ t, p, q, r, z: (p[2] + q[2] + r[2]) / 3, lit, lits, front });
     }
-    // Painter: smallest rz first is furthest from the camera.
-    view.sort((a, b) => a.z - b.z);
+    // Two passes, back-facing triangles first, then front-facing, each painted
+    // far to near. A garment is a single open shell, so the away-facing half is
+    // what covers the neck, cuffs and hem from the inside - it must be drawn,
+    // and drawing it first is what stops the lining showing through the front.
+    view.sort((a, b) => (a.front === b.front ? a.z - b.z : a.front ? 1 : -1));
+    // The frame's final draw order, kept for tests and tools. `view` is already
+    // built per frame, so this holds a reference rather than copying anything.
+    this._drawn = view;
     ctx.imageSmoothingEnabled = false;
     // A panel is flat but rotated, so its triangles sit at different depths and
     // interleave with other panels in the sort. The silhouette therefore has to
     // be clipped per triangle, not per panel. Each ring is projected once per
     // frame and reused.
     const clips = new Map();
+    // The bleed has to be a fraction of a DEVICE pixel, not of a CSS one: the
+    // crack between two clipped fills is one device pixel wide at any dpr, and
+    // 0.34 device pixels was too thin to cover it on the dpr 2-3 screens where
+    // the seams showed as hairlines.
+    const bleed = 0.45 + 0.18 * dpr;
     for (const v of view) {
       const loop = v.t.loop;
       if (!loop) {
         // Mesh triangles bleed into their neighbours to hide the seam cracks;
         // panels are clipped to the face outline and must not cross it.
-        drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.lit, v.t.two, v.lits);
+        drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.lit, v.t.two ? bleed : 0, v.lits);
         continue;
       }
       let pts = clips.get(loop);
@@ -474,8 +532,8 @@ export class Preview3D {
   }
 }
 
-function tri(tris, a, b, c, u, v, w2, tex, lit, loop, faceId) {
-  tris.push({ a, b, c, u, v, w2, tex, lit, loop: loop || null, face: faceId, a2: a[2], b2: b[2], c2: c[2] });
+function tri(tris, a, b, c, u, v, w2, tex, lit, loop, faceId, n) {
+  tris.push({ a, b, c, u, v, w2, tex, lit, loop: loop || null, face: faceId, n: n || null });
 }
 
 /* ---------------- triangle rasteriser ---------------- */
@@ -490,14 +548,16 @@ function drawTri(ctx, p, q, r, u, v, w2, tex, lit, bleed, lits) {
   if (Math.abs(area) < 1e-4) return;
   if (bleed) {
     // Neighbouring triangles share an exact edge, and two independently clipped
-    // fills leave a hairline of backdrop along it. Push each vertex a third of a
-    // pixel away from the centroid so neighbours overlap and the seam is covered.
-    // The affine mapping below is left alone, so this stretches the texture by
-    // well under a pixel - invisible, and the only way to hide the crack.
+    // fills leave a hairline of backdrop along it. Push each vertex out from the
+    // centroid by `bleed` device pixels so neighbours overlap and the seam is
+    // covered. The affine mapping below is left alone, so this stretches the
+    // texture by well under a pixel - invisible, and the only way to hide it.
+    // `bleed` comes from the caller because the crack is a DEVICE pixel wide:
+    // a fixed CSS-pixel fraction was too thin on a dpr-3 screen.
     const cx = (p[0] + q[0] + r[0]) / 3;
     const cy = (p[1] + q[1] + r[1]) / 3;
     const rad = (Math.hypot(p[0] - cx, p[1] - cy) + Math.hypot(q[0] - cx, q[1] - cy) + Math.hypot(r[0] - cx, r[1] - cy)) / 3;
-    const k = 1 + 0.34 / Math.max(rad, 0.34);
+    const k = 1 + bleed / Math.max(rad, bleed);
     p = [cx + (p[0] - cx) * k, cy + (p[1] - cy) * k];
     q = [cx + (q[0] - cx) * k, cy + (q[1] - cy) * k];
     r = [cx + (r[0] - cx) * k, cy + (r[1] - cy) * k];

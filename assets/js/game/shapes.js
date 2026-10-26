@@ -182,7 +182,14 @@ export function fillCells(grid, x, y, target, opts = {}) {
   const contig = opts.contiguous !== false;
   const seen = new Uint8Array(grid.w * grid.h);
   const out = [];
-  const same = (c) => (tol ? Math.abs(c - from) <= tol : c === from);
+  // "Similar" has to mean similar *colours*. This module does not know what a
+  // palette is, so the caller hands down the comparison and stays the only
+  // place colour science lives; `tolerance` on its own is a distance between
+  // list positions, which is kept only so a caller that has no palette can
+  // still ask for a loose fill.
+  const same =
+    opts.similar ||
+    ((c) => (tol ? Math.abs(c - from) <= tol : c === from));
   const match = (cx, cy) => {
     const c = grid.colorAt(cx, cy);
     return c >= 0 && same(c);

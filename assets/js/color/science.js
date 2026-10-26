@@ -127,7 +127,7 @@ export class PaletteIndex {
       this.entries.push({ idx: i, lab, hex });
     }
     this._cache = new Map();
-    // The palette is denser than it looks: it contains pairs only ~1.9 apart,
+    // The palette is denser than it looks: its closest pair measures 2.36,
     // which is below what an eye can separate. Anything that quantises a photo
     // will sprinkle those in and balloon the colour count, which is exactly
     // what reduceColors() below is for.
@@ -198,6 +198,74 @@ export function hexToLab(hex) {
 let _shared = null;
 export function palette() {
   return _shared || (_shared = new PaletteIndex());
+}
+
+/**
+ * How different two shades look, in ΔE(2000) units.
+ *
+ * This exists because "fill similar colour" was first written as a difference of
+ * palette *indices*, and an index is a position in a list, not a colour. The
+ * palette is grouped by family, so index distance calls two adjacent entries in
+ * the same family far apart and two unrelated shades that happen to sit next to
+ * each other nearly identical - a tolerance of 3 then fills half a sleeve and
+ * stops dead at a seam.
+ *
+ * Scale, for the controls: under ~2 is something an eye cannot separate (the
+ * palette's own closest pair measures 2.36), 5-10 is "the same colour in a
+ * different light", 20 is "a different colour that goes with it".
+ *
+ * @returns {number|null} null when either index is not a real shade
+ */
+export function shadeDeltaE(a, b, pi = palette()) {
+  const la = pi.labs[a];
+  const lb = pi.labs[b];
+  if (!la || !lb) return null;
+  if (a === b) return 0;
+  return deltaE2000(la, lb);
+}
+
+/**
+ * How many tones the airbrush fades through. Four reads as a soft edge on a
+ * brush-sized disc and keeps one dab to four ops rather than forty.
+ */
+export const FADE_STEPS = 4;
+
+const fadeCache = new Map();
+
+/**
+ * The shade an airbrush dot lands in, `step` steps of FADE_STEPS away from
+ * `idx` toward white.
+ *
+ * The board has no alpha, so a soft edge cannot be translucent - it has to be
+ * paler. Every dot therefore snaps to a shade that actually ships in the
+ * palette, which is what keeps the result exportable as the game would build
+ * it. A colour already near white simply stays itself: it has nowhere paler to
+ * go, and inventing a lighter one would be a colour the game does not have.
+ */
+export function fadeShade(idx, step, pi = palette()) {
+  if (!idx) return 0; // empty is not a colour to fade
+  const s = Math.max(0, Math.min(FADE_STEPS, step | 0));
+  if (!s) return idx;
+  let row = fadeCache.get(idx);
+  if (!row) {
+    const hex = FLAT_COLORS[idx];
+    const r0 = parseInt(hex.slice(1, 3), 16);
+    const g0 = parseInt(hex.slice(3, 5), 16);
+    const b0 = parseInt(hex.slice(5, 7), 16);
+    row = [idx];
+    for (let k = 1; k <= FADE_STEPS; k++) {
+      const t = k / FADE_STEPS;
+      row.push(
+        pi.nearest(
+          Math.round(r0 + (255 - r0) * t),
+          Math.round(g0 + (255 - g0) * t),
+          Math.round(b0 + (255 - b0) * t)
+        )
+      );
+    }
+    fadeCache.set(idx, row);
+  }
+  return row[s];
 }
 
 /* ---------------- dithering ---------------- */

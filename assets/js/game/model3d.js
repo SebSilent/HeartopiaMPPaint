@@ -123,6 +123,11 @@ export const MODELS = {
 
 /** Canvas boards of any ratio/level are just the one face, standing up. */
 export function panelsFor(itemId) {
+  // An id that is not a string at all - a room from an older build, a design
+  // message that arrived before the item was resolved - must answer "no model",
+  // not throw. Every caller here is a paint or a click handler, and a throw in
+  // one of those takes the board down with it.
+  if (typeof itemId !== 'string' || !itemId) return null;
   if (MODELS[itemId]) return MODELS[itemId];
   const key = itemId.startsWith('book') ? 'book' : itemId;
   if (MODELS[key]) return MODELS[key];
@@ -132,6 +137,7 @@ export function panelsFor(itemId) {
 }
 
 export function modelKey(itemId) {
+  if (typeof itemId !== 'string' || !itemId) return itemId;
   if (MODELS[itemId]) return itemId;
   if (itemId.startsWith('canvas-')) return 'canvas';
   return itemId;

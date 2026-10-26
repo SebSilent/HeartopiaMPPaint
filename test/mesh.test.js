@@ -176,3 +176,72 @@ test('an item with no mesh falls back to the flat panels', async () => {
   const mesh = await loadMesh('chair');
   assert.equal(mesh, null, 'a furniture id must not resolve to a garment');
 });
+
+test('the lining is painted before the face, never over it', async () => {
+  globalThis.window = { devicePixelRatio: 1 };
+  const canvas = mkCanvas();
+  const p = new Preview3D(canvas, bake, null);
+  const item = CLOTHING.find((c) => c.id === 'tshirt');
+  p.setMesh(await loadMesh('tshirt'));
+  p.build(item);
+  for (const yaw of [0, -24, 60, 140, 250]) {
+    p.yaw = yaw;
+    p.pitch = 14;
+    p.render(true);
+    const order = p._drawn;
+    const back = order.filter((v) => !v.front);
+    const face = order.filter((v) => v.front);
+    assert.ok(back.length && face.length, `one pass was empty at yaw ${yaw}`);
+    // Every away-facing triangle must precede every toward-facing one. This is
+    // what stops the inside of a sleeve painting over the outside of the chest.
+    const lastBack = order.reduce((m, v, i) => (!v.front && i > m ? i : m), -1);
+    const firstFace = order.findIndex((v) => v.front);
+    assert.ok(lastBack < firstFace, `yaw ${yaw}: a lining triangle was drawn at ${lastBack}, after the face started at ${firstFace}`);
+    // And within each pass, far first.
+    for (const list of [back, face]) {
+      for (let i = 1; i < list.length; i++) {
+        assert.ok(list[i].z >= list[i - 1].z - 1e-6, 'a pass was not sorted far to near');
+      }
+    }
+  }
+});
+
+test('the inside of the shell reads darker than the outside', async () => {
+  globalThis.window = { devicePixelRatio: 1 };
+  const canvas = mkCanvas();
+  const p = new Preview3D(canvas, bake, null);
+  const item = CLOTHING.find((c) => c.id === 'tshirt');
+  p.setMesh(await loadMesh('tshirt'));
+  p.build(item);
+  p.yaw = 0;
+  p.pitch = 0;
+  p.render(true);
+  const face = p._drawn.filter((v) => v.front);
+  const back = p._drawn.filter((v) => !v.front);
+  const litFace = Math.max(...face.map((v) => v.lit));
+  const litBack = Math.max(...back.map((v) => v.lit));
+  assert.ok(litBack < litFace, `lining peaks at ${litBack}, outside at ${litFace}: nothing dims the inside`);
+});
+
+test('orbiting reorders the paint, because depth is measured from the camera', async () => {
+  // The sort key used to be the model's own z, captured once at build. That is
+  // a fixed number, so turning the garment changed nothing about what was drawn
+  // in what order, and far surfaces painted over near ones at every angle off
+  // the front - the "wall hack". A view-space key must reorder as the camera
+  // moves.
+  globalThis.window = { devicePixelRatio: 1 };
+  const canvas = mkCanvas();
+  const p = new Preview3D(canvas, bake, null);
+  const item = CLOTHING.find((c) => c.id === 'tshirt');
+  p.setMesh(await loadMesh('tshirt'));
+  p.build(item);
+  const seq = (yaw) => {
+    p.yaw = yaw;
+    p.pitch = 0;
+    p.render(true);
+    return p._drawn.map((v) => v.t.face + ':' + (v.front ? 'f' : 'b')).join(',');
+  };
+  const a = seq(0);
+  const b = seq(80);
+  assert.notEqual(a, b, 'the draw order did not change at all when the model turned');
+});

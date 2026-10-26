@@ -9,7 +9,7 @@ import { CLOTHING } from './slots.js';
 const KNOWN = new Set(CLOTHING.map((c) => c.id));
 const cache = new Map();
 
-function decode(b64, h) {
+function decode(b64, h, itemId) {
   const bin = atob(b64);
   const bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
@@ -40,6 +40,9 @@ function decode(b64, h) {
     faces: h.faces,
     tris: h.t,
     half: h.half,
+    // Lets tools/meshopenings.mjs and meshcover.js cache derived data against
+    // this exact mesh, instead of recomputing it on every frame.
+    key: itemId,
   };
 }
 
@@ -52,7 +55,7 @@ export async function loadMesh(itemId) {
   if (cache.has(itemId)) return cache.get(itemId);
   const p = import(`../data/mesh/${itemId}.js`)
     .then((m) => {
-      const mesh = decode(m.MESH, m.HEADER);
+      const mesh = decode(m.MESH, m.HEADER, itemId);
       cache.set(itemId, mesh);
       return mesh;
     })

@@ -21,6 +21,11 @@ REPORT.md
 /_*.txt
 /_old_re/
 
+# probe scratch: screenshots and per-run dumps. The two .txt files that are NOT
+# prefixed are kept on purpose - they are the recorded measurements PLAN.md cites.
+/tools/*.png
+/tools/_*.txt
+
 # logs / os noise
 *.log
 npm-debug.log*

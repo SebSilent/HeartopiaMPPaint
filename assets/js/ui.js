@@ -57,8 +57,13 @@ const DEVICE_ICON = { desktop: 'desktop', ipad: 'ipad', iphone: 'phone', android
 const PANELS = ['tracePanel', 'importPanel', 'd3Panel'];
 const BTN = { tracePanel: 'btnTrace', importPanel: 'btnImport', d3Panel: 'btn3d' };
 
-/** Tools that drag out a shape, and so own the filled/hollow switch. */
-const DRAG_TOOLS = ['line', 'rect', 'ellipse'];
+/**
+ * Tools that lay out a region, and so own the filled/hollow switch. The polygon
+ * is in here although it does not drag: it commits through the same `shapeFilled`
+ * flag, so leaving it out meant the only way to get a filled polygon was to
+ * select the rectangle tool, set the switch, and come back.
+ */
+const SHAPE_TOOLS = ['line', 'rect', 'ellipse', 'polygon'];
 
 /**
  * Import controls kept as fractions in state and shown as percentages.
@@ -396,7 +401,7 @@ export class UI {
         );
       }
     }
-    if (DRAG_TOOLS.includes(st.tool)) {
+    if (SHAPE_TOOLS.includes(st.tool)) {
       html += row(
         'Style',
         chips('fillmode', [

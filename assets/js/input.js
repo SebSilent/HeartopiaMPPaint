@@ -99,6 +99,7 @@ export class Input {
     this.pan = null;
     this.hover = null;
     this.poly = []; // pending polygon points
+    this._polyAt = 0; // when the last polygon point was placed, for double-click close
     this._pointers = new Map();
     this._el = view.base.parentElement;
     this._off = [];
@@ -156,22 +157,37 @@ export class Input {
       { passive: false }
     );
 
-    add('keydown', (e) => {
+    // Keys go on the window, not on #stage. The stage has no tabindex, so a
+    // listener bound to it only fires when focus is inside it - and after a click
+    // on a canvas it is not. Enter-to-close and Escape-to-abort a polygon were
+    // therefore dead for anyone who had not first tabbed into the dock, with no
+    // error anywhere to say so.
+    const keyTarget = typeof window.addEventListener === 'function' ? window : el;
+    const kd = (e) => {
       if (e.code === 'Shift') this._shift = true;
       if (e.code === 'Space' && !e.repeat && !this._inField(e)) {
         this._spaceHeld = true;
         e.preventDefault();
       }
+      // Enter inside the Text field means "this string", not "close the shape".
+      if (this._inField(e)) return;
       if (e.key === 'Enter' && this.poly.length) this._closePolygon();
-      if (e.key === 'Escape') this.poly = [];
-    });
-    add('keyup', (e) => {
+      if (e.key === 'Escape' && this.poly.length) {
+        this.poly = [];
+        this.view.markDirty();
+      }
+    };
+    const ku = (e) => {
       if (e.code === 'Space') this._spaceHeld = false;
       if (e.code === 'Shift') {
         this._shift = false;
         this.view.markDirty();
       }
-    });
+    };
+    keyTarget.addEventListener('keydown', kd);
+    keyTarget.addEventListener('keyup', ku);
+    this._off.push(() => keyTarget.removeEventListener('keydown', kd));
+    this._off.push(() => keyTarget.removeEventListener('keyup', ku));
     add('contextmenu', (e) => e.preventDefault());
   }
 
@@ -242,7 +258,8 @@ export class Input {
         this._flushOut();
         return;
       }
-      this._start(pid, cell, type);
+      // Touch has no click count to read, so a double-tap is timed instead.
+      this._start(pid, cell, type, 1);
       this._flushOut();
       return;
     }
@@ -250,7 +267,7 @@ export class Input {
     this._pointers.set(pid, { x: cell.x, y: cell.y, type, down: true });
 
     if (type === 'pen') {
-      this._start(pid, cell, type);
+      this._start(pid, cell, type, e.detail);
       this._flushOut();
       return;
     }
@@ -262,12 +279,12 @@ export class Input {
       return;
     }
     if (e.button !== 0) return;
-    this._start(pid, cell, type);
+    this._start(pid, cell, type, e.detail);
     this._flushOut();
   }
 
   /** One entry point for every tool, so mouse/pen/touch cannot drift apart. */
-  _start(pid, cell, type) {
+  _start(pid, cell, type, detail = 1) {
     const st = this.getState();
     // floor, not round: cell n spans [n, n+1). Rounding would let a tap at 2.5
     // read cell 3, i.e. steal the left half of the neighbour's territory.
@@ -289,10 +306,26 @@ export class Input {
     if (st.tool === TOOLS.FILL) return this._floodAt(x, y);
     if (st.tool === TOOLS.TEXT) return this._placeText(x, y);
     if (st.tool === TOOLS.POLYGON) {
-      if (this.poly.length && Math.hypot(x - this.poly[0][0], y - this.poly[0][1]) < 2 && this.poly.length > 2) {
-        return this._closePolygon();
+      const last = this.poly[this.poly.length - 1];
+      // Three ways to finish, because people mean it three different ways:
+      // clicking back on the first vertex (the rubber band closing), a real
+      // double-click anywhere (what MS Paint does, and what a mouse hand
+      // reaches for without looking it up), and a double-tap - which has to be
+      // timed, because touch reports no click count at all.
+      const near = (p) => p && Math.hypot(x - p[0], y - p[1]) < 2;
+      const dbl =
+        detail >= 2 || (last && near(last) && performance.now() - this._polyAt < 380);
+      if (this.poly.length > 2 && (near(this.poly[0]) || dbl)) return this._closePolygon();
+      // A double-click lands twice in the same cell. Two identical vertices make
+      // a degenerate edge, and a shape that closes on itself is how a polygon
+      // ends up filling wrong, so the repeat is dropped rather than added.
+      if (near(last)) {
+        this._polyAt = performance.now();
+        this.view.markDirty();
+        return;
       }
       this.poly.push([x, y]);
+      this._polyAt = performance.now();
       this.view.markDirty();
       return;
     }

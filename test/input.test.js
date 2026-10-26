@@ -8,7 +8,7 @@
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeStamp } from '../assets/js/game/stamps.js';
-import { shapeCells, roundOffsets } from '../assets/js/game/shapes.js';
+import { shapeCells, roundOffsets, polygonCells } from '../assets/js/game/shapes.js';
 
 // Input checks for Pointer Events support at bind time.
 globalThis.window = globalThis.window || {};
@@ -658,6 +658,67 @@ test('the polygon rubber line ends on the cell the next click would add', () => 
   input.drawPreview(ctx, view);
   const lines = ctx.calls.filter((c) => c[0] === 'lineTo').map((c) => c.slice(1));
   assert.deepEqual(lines[lines.length - 1], [28, 20], 'rubber line ends at toScreen(7, 5)');
+  input.destroy();
+});
+
+test('a double-click closes the polygon and paints it as one op', () => {
+  const { input, grid, room } = makeInput({ state: { tool: TOOLS.POLYGON, shapeFilled: true } });
+  input.onDown(pe({ clientX: 1 * SCALE, clientY: 1 * SCALE }));
+  input.onDown(pe({ clientX: 8 * SCALE, clientY: 1 * SCALE }));
+  input.onDown(pe({ clientX: 8 * SCALE, clientY: 7 * SCALE }));
+  // The second click of the pair: same cell, click count 2.
+  input.onDown(pe({ clientX: 8 * SCALE, clientY: 7 * SCALE, detail: 2 }));
+
+  assert.equal(room.ops.length, 1, 'one op for the whole shape');
+  assert.equal(input.poly.length, 0, 'and nothing left pending');
+  assert.equal(
+    [...grid.color].filter((c) => c === 16).length,
+    polygonCells([[1, 1], [8, 1], [8, 7]], true).length,
+    'exactly the triangle, no degenerate extra vertex'
+  );
+  assert.equal(grid.colorAt(1, 7), 0, 'outside the triangle stays blank');
+  input.destroy();
+});
+
+test('clicking back on the first vertex still closes it', () => {
+  const { input, room } = makeInput({ state: { tool: TOOLS.POLYGON } });
+  input.onDown(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE }));
+  input.onDown(pe({ clientX: 9 * SCALE, clientY: 4 * SCALE }));
+  input.onDown(pe({ clientX: 7 * SCALE, clientY: 9 * SCALE }));
+  input.onDown(pe({ clientX: 4 * SCALE, clientY: 4 * SCALE }));
+  assert.equal(room.ops.length, 1, 'closed by returning to the start');
+  assert.equal(input.poly.length, 0);
+  input.destroy();
+});
+
+test('a double-tap closes it too, because touch reports no click count', () => {
+  const { input, room } = makeInput({ state: { tool: TOOLS.POLYGON } });
+  const tap = (x, y) => pe({ pointerType: 'touch', pointerId: 7, clientX: x * SCALE, clientY: y * SCALE });
+  input.onDown(tap(1, 1));
+  input.onDown(tap(8, 1));
+  input.onDown(tap(4, 8));
+  input.onDown(tap(4, 8)); // same cell, a heartbeat later
+  assert.equal(room.ops.length, 1, 'the second tap read as a double-tap');
+  input.destroy();
+});
+
+test('two clicks in one cell do not stack a degenerate vertex', () => {
+  const { input } = makeInput({ state: { tool: TOOLS.POLYGON } });
+  input.onDown(pe({ clientX: 3 * SCALE, clientY: 3 * SCALE }));
+  input.onDown(pe({ clientX: 7 * SCALE, clientY: 3 * SCALE }));
+  input._polyAt = performance.now() - 5000; // slow second click: not a double
+  input.onDown(pe({ clientX: 7 * SCALE, clientY: 3 * SCALE }));
+  assert.deepEqual(input.poly, [[3, 3], [7, 3]], 'the repeat was dropped, not added');
+  input.destroy();
+});
+
+test('a double-click with only two points does not paint a sliver', () => {
+  const { input, grid, room } = makeInput({ state: { tool: TOOLS.POLYGON } });
+  input.onDown(pe({ clientX: 2 * SCALE, clientY: 2 * SCALE }));
+  input.onDown(pe({ clientX: 6 * SCALE, clientY: 6 * SCALE, detail: 2 }));
+  assert.equal(room.ops.length, 0, 'nothing committed');
+  assert.equal([...grid.color].some((c) => c !== 0), false, 'nothing painted');
+  assert.equal(input.poly.length, 2, 'and the shape is still being built');
   input.destroy();
 });
 

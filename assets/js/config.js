@@ -27,6 +27,20 @@ function setting(key, urlParam, fallback) {
  * is false for every x, so a mistyped param does not merely misconfigure a
  * guard - it switches the guard off. Anything unusable falls back.
  */
+/**
+ * A boolean setting. `Boolean('0')` is true, and so is every other non-empty
+ * string, so a naive parse would make `?gapFill=0` turn the feature ON. Words
+ * that mean off win, words that mean on win, and anything else falls back.
+ */
+function flag(key, urlParam, fallback) {
+  const v = setting(key, urlParam, undefined);
+  if (v === undefined || v === null || v === '') return fallback;
+  const s = String(v).trim().toLowerCase();
+  if (s === '0' || s === 'false' || s === 'off' || s === 'no') return false;
+  if (s === '1' || s === 'true' || s === 'on' || s === 'yes') return true;
+  return fallback;
+}
+
 function num(key, urlParam, fallback, min = 0) {
   const n = Number(setting(key, urlParam, fallback));
   return Number.isFinite(n) && n >= min ? n : fallback;
@@ -98,6 +112,14 @@ export const CONFIG = {
     delayMs: remoteDelay,
     spreadMs: Number(setting('smoothSpread', 'smoothSpread', 55)),
     backlogCells: Number(setting('smoothBacklog', 'smoothBacklog', 900)),
+  },
+
+  d3: {
+    // The pass that paints the backdrop trapped inside a garment's silhouette
+    // (game/coverage.js). On by default; `?gapFill=0` turns it off, which exists
+    // so the claim "it only ever fills backdrop" can be measured against the same
+    // frame rather than argued, and so a weak device can skip the per-frame work.
+    gapFill: flag('gapFill', 'gapFill', true),
   },
 
   limits: {

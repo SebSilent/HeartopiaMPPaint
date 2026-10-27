@@ -164,7 +164,20 @@ for (let i = 0; i < 6; i++) {
   // The guard is against an empty canvas, which reads as 0% backdrop because it
   // is transparent black. 0.8 was wrong for a garment that fills the frame - the
   // bucket covers a fifth of the border with cloth and was refused a measurement.
-  if (m.borderFrac < 0.1) throw new Error(`preview is not showing the backdrop (${(m.borderFrac * 100).toFixed(0)}% of the border): the canvas is empty or unsized, so any hole count here would be meaningless`);
+  if (m.borderFrac < 0.1) {
+    // A throw inside a frame is caught by the app's loop, which toasts the
+    // message, hides the panel and stops. The canvas is then blank, so this used
+    // to report "the canvas is empty or unsized" while the real cause sat in a
+    // toast nothing here was looking at, and pageerror never fires for a caught
+    // error. Read the toast instead of guessing at it.
+    const toasts = (await page.locator('#toast .toast').allTextContents()).join(' | ');
+    const hidden = await page.evaluate(() => document.getElementById('d3Panel').hidden);
+    throw new Error(
+      `preview is not showing the backdrop (${(m.borderFrac * 100).toFixed(0)}% of the border)` +
+        (hidden ? ' and the panel is hidden: the render loop stopped' : '') +
+        (toasts ? ` - toast says: ${toasts}` : ' - no toast, so the canvas really is empty or unsized')
+    );
+  }
   if (m.garment < 2000) throw new Error(`only ${m.garment} non-backdrop pixels: nothing was rendered`);
   angles.push(m);
   // Orbit by dragging on the preview, so the angles are the ones a player sees.

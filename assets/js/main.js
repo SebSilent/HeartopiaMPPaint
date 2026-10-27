@@ -101,7 +101,7 @@ const state = {
   // zoom/ox/oy are the placement of the picture inside the face. They live here
   // because `rasterize` samples through them, so the preview you drag and the
   // cells you get are the same numbers - see ui/importer.js fitRect().
-  import: { fit: 'cover', dither: 'none', maxColors: 24, brightness: 0, contrast: 0, saturation: 0, trim: 16, zoom: 1, ox: 0, oy: 0, rot: 0 },
+  import: { fit: 'cover', dither: 'none', maxColors: 24, brightness: 0, contrast: 0, saturation: 0, sharpness: 0, trim: 16, zoom: 1, ox: 0, oy: 0, rot: 0 },
 };
 
 let room = null;

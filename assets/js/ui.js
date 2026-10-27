@@ -937,6 +937,11 @@ export class UI {
       rows.push(['brightness', 'Brightness', 'range', [-60, 60]]);
       rows.push(['contrast', 'Contrast', 'range', [-60, 60]]);
       rows.push(['saturation', 'Saturation', 'range', [-80, 80]]);
+      // One-way on purpose. Shrinking a photo to board size is a box filter, so
+      // the softness is always in the same direction and there is nothing for a
+      // negative end of the slider to undo; and 0 is the honest default, because
+      // sharpening a picture that was already crisp just adds speckle.
+      rows.push(['sharpness', 'Sharpen', 'range', [0, 100]]);
     } else {
       rows.push(['pitch', 'Cell size', 'auto']);
       rows.push(['trim', 'Ignore cell edges', 'range', [4, 34]]);

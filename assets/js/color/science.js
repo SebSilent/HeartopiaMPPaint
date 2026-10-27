@@ -306,15 +306,88 @@ function bayerMatrix(name) {
  *   keepEmpty  leave unpainted cells as 0 instead of mapping them
  * @returns {{cells: Uint8Array, colors: Set<number>, empty: number}}
  */
+/**
+ * Unsharp mask: push every pixel away from the average of its neighbours.
+ *
+ * Downsampling a photo to board size is a box filter and a box filter is a blur,
+ * which is why an import lands soft. Doing this *after* the downsample rather
+ * than before is the point - it counteracts the blur that was just introduced,
+ * and at board resolution it costs a few thousand pixels.
+ *
+ * Two traps this is built to avoid. It must not ring the picture with a dark
+ * halo, so out-of-frame neighbours are clamped to the nearest real pixel instead
+ * of being read as black. And it must not fringe a transparent edge, so a
+ * transparent neighbour counts as a copy of the pixel in the middle: it then adds
+ * nothing to the difference, and an alpha edge keeps its own colour rather than
+ * picking up the black that PNGs store inside fully transparent pixels.
+ *
+ * @param {Uint8ClampedArray} data RGBA, w*h*4 long
+ * @param {number} amount 0..1. 0 returns the input untouched.
+ * @returns {Uint8ClampedArray} a new array; the input is never modified
+ */
+export function sharpen(data, w, h, amount = 1) {
+  const out = new Uint8ClampedArray(data.length);
+  out.set(data);
+  const a = Math.min(1, Math.max(0, amount));
+  if (!a || w < 3 || h < 3 || !data || data.length < w * h * 4) return out;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = (y * w + x) * 4;
+      if (data[p + 3] === 0) continue; // nothing to sharpen, and no colour to protect
+      const r = data[p];
+      const g = data[p + 1];
+      const b = data[p + 2];
+      let sr = 0;
+      let sg = 0;
+      let sb = 0;
+      let n = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue; // the ring only: with the centre in the average
+          // the high pass mostly cancels itself and the slider feels dead.
+          const nx = Math.min(w - 1, Math.max(0, x + dx));
+          const ny = Math.min(h - 1, Math.max(0, y + dy));
+          const q = (ny * w + nx) * 4;
+          if (data[q + 3] === 0) {
+            // A transparent neighbour is not black. Count the centre's own colour
+            // instead, so the gap contributes no difference.
+            sr += r;
+            sg += g;
+            sb += b;
+          } else {
+            sr += data[q];
+            sg += data[q + 1];
+            sb += data[q + 2];
+          }
+          n++;
+        }
+      }
+      if (!n) continue;
+      const k = a * 2; // the usual unsharp gain, so a slider at 100 is "strong"
+      out[p] = r + k * (r - sr / n);
+      out[p + 1] = g + k * (g - sg / n);
+      out[p + 2] = b + k * (b - sb / n);
+      // `out` is a Uint8ClampedArray, so the assignment clamps for us.
+    }
+  }
+  return out;
+}
+
 export function quantize(img, o = {}) {
   const pi = o.index || palette();
-  const { width: w, height: h, data } = img;
+  const { width: w, height: h } = img;
+  let data = img.data;
   // Fail here rather than quietly: an ImageData object where the pixel array is
   // expected reads `undefined` for every pixel, and the honest-looking answer is
   // one flat shade across the whole board.
   if (!data || typeof data.length !== 'number') {
     throw new TypeError('quantize wants { data: Uint8ClampedArray, width, height } - the pixels, not an ImageData');
   }
+  // Sharpen the raster before anything reads it. Both the Floyd-Steinberg buffer
+  // and the direct path consume `data`, and sharpening after quantisation is not
+  // a thing that exists - the colours are gone by then.
+  const sharp = Number(o.sharpness) || 0;
+  if (sharp > 0) data = sharpen(data, w, h, sharp / 100);
   const cells = new Uint8Array(w * h);
   const colors = new Set();
   let empty = 0;

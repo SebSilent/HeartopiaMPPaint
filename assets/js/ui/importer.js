@@ -132,6 +132,9 @@ export function photoToCells(img, w, h, o = {}) {
     brightness: o.brightness,
     contrast: o.contrast,
     saturation: o.saturation,
+    // The softness a downsample introduces is what this corrects, so it has to
+    // run on the rasterised board-size pixels - which is where we are.
+    sharpness: o.sharpness,
     alphaCut: o.alphaCut ?? 8,
   });
   let cells = q.cells;

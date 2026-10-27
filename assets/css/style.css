@@ -687,6 +687,16 @@ kbd {
   color: var(--ink);
 }
 .ctl output { min-width: 44px; text-align: right; font-family: var(--font-pixel); font-weight: 400; }
+/* A grid item stretches, which for a checkbox means a 200px-wide tick box.
+   Kept to its own size and pushed to the label it belongs to. */
+.ctl input[type='checkbox'] {
+  justify-self: start;
+  width: 18px;
+  height: 18px;
+  /* --accent-deep, not --wood-2: the latter is not a variable this file defines,
+     and an unknown custom property fails quietly to the browser's blue. */
+  accent-color: var(--accent-deep);
+}
 
 input[type="range"].slider {
   -webkit-appearance: none;

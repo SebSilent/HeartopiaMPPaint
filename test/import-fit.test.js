@@ -69,6 +69,72 @@ test('turn angles arrive as strings from a select and as nonsense from a bad URL
   );
 });
 
+/** A picture and target chosen so the box cannot land on whole cells. */
+const ODD = { width: 333, height: 200 };
+
+test('the box lands on whole cells by default', () => {
+  for (const rot of [0, 90, 180, 270]) {
+    for (const fit of ['cover', 'contain', 'stretch']) {
+      const r = fitRect(ODD, T.w, T.h, { fit, rot });
+      for (const k of ['dx', 'dy', 'sw', 'sh', 'dw', 'dh']) {
+        assert.ok(Number.isInteger(r[k]), `rot ${rot} ${fit}: ${k} is ${r[k]}, not a whole cell`);
+      }
+    }
+  }
+});
+
+test('the continuous box is still available, and it really is fractional', () => {
+  const free = fitRect(ODD, T.w, T.h, { fit: 'cover', snap: false });
+  assert.ok(!Number.isInteger(free.dw), `unsnapped width ${free.dw} is between cells`);
+  const snapped = fitRect(ODD, T.w, T.h, { fit: 'cover' });
+  assert.notEqual(snapped.dw, free.dw, 'and snapping changed it, so the test above is not vacuous');
+});
+
+test('a drag smaller than a cell does nothing, which is the point', () => {
+  const still = fitRect(ODD, T.w, T.h, { fit: 'cover' });
+  // 0.1 of a cell on a 100-cell face: there is nowhere between cells to go.
+  const nudge = fitRect(ODD, T.w, T.h, { fit: 'cover', ox: 0.001, oy: 0.001 });
+  assert.equal(nudge.dx, still.dx, `${still.dx} -> ${nudge.dx}`);
+  assert.equal(nudge.dy, still.dy);
+});
+
+test('a drag of exactly one cell moves it exactly one cell', () => {
+  const a = fitRect(ODD, T.w, T.h, { fit: 'cover' });
+  const b = fitRect(ODD, T.w, T.h, { fit: 'cover', ox: 1 / T.w, oy: 1 / T.h });
+  assert.equal(b.dx - a.dx, 1, `${a.dx} -> ${b.dx}`);
+  assert.equal(b.dy - a.dy, 1);
+});
+
+test('snapping does not shove the picture off centre', () => {
+  // Rounding can move an edge by at most half a cell, so the centre has to stay
+  // within half a cell of where the unrounded box would have put it. Anything
+  // worse than that is a systematic shift, not a rounding.
+  for (const width of [101, 213, 333, 400, 641]) {
+    for (const height of [99, 150, 200, 377]) {
+      const img = { width, height };
+      for (const fit of ['cover', 'contain']) {
+        const s = fitRect(img, T.w, T.h, { fit });
+        const free = fitRect(img, T.w, T.h, { fit, snap: false });
+        const cx = s.dx + s.sw / 2;
+        const fx = free.dx + free.sw / 2;
+        assert.ok(Math.abs(cx - fx) <= 0.75, `${width}x${height} ${fit}: centre moved ${cx - fx}`);
+        const cy = s.dy + s.sh / 2;
+        const fy = free.dy + free.sh / 2;
+        assert.ok(Math.abs(cy - fy) <= 0.75, `${width}x${height} ${fit}: centre moved ${cy - fy} vertically`);
+      }
+    }
+  }
+});
+
+test('a turned picture snaps the turned box, not the unturned one', () => {
+  // The quarter turn swaps which size becomes which edge, so the rounding has to
+  // happen before the swap or the occupied box comes out fractional again.
+  const r = fitRect(ODD, T.w, T.h, { fit: 'contain', rot: 90 });
+  assert.ok(Number.isInteger(r.sw) && Number.isInteger(r.sh), `${r.sw}x${r.sh}`);
+  assert.equal(r.sw, r.dh, 'and the turned box still describes the turned picture');
+  assert.equal(r.sh, r.dw);
+});
+
 test('scale and pan survive a turn', () => {
   const r = fitRect(IMG, T.w, T.h, { fit: 'contain', rot: 90, zoom: 2 });
   const one = fitRect(IMG, T.w, T.h, { fit: 'contain', rot: 90 });

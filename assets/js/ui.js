@@ -932,6 +932,9 @@ export class UI {
       // around the same face, and a sideways phone photo is the commonest reason
       // the auto-fit is wrong.
       rows.push(['rot', 'Turn', 'select', [['0', 'no turn'], ['90', '90° right'], ['180', 'upside down'], ['270', '90° left']]]);
+      // Stated rather than silently applied: a drag that refuses to move less
+      // than a whole cell looks broken unless you can see the rule that makes it.
+      rows.push(['snap', 'Snap to cells', 'check']);
       rows.push(['dither', 'Dither', 'select', DITHER.filter((d) => d !== 'bayer2')]);
       rows.push(['maxColors', 'Max colours', 'range', [4, 125]]);
       rows.push(['brightness', 'Brightness', 'range', [-60, 60]]);
@@ -973,6 +976,14 @@ export class UI {
           const shown = PLACEMENT.has(key) ? Math.round(raw * 100) : raw;
           return `<label class="ctl"><span>${label}</span><input class="slider" type="range" data-ctl="${key}" min="${lo}" max="${hi}" step="${step}" value="${shown}"></label>`;
         }
+        if (kind === 'check') {
+          // `checked` is the value. A checkbox's `value` attribute is "on"
+          // whatever the box says, so reading it would store a constant true.
+          const on = !!this.state.import[key];
+          return `<label class="ctl ctl-check"><span>${label}</span><input type="checkbox" data-ctl="${key}"${
+            on ? ' checked' : ''
+          }></label>`;
+        }
         return `<label class="ctl"><span>${label}</span><output data-ctl="${key}">auto</output></label>`;
       })
       .join('');
@@ -988,7 +999,8 @@ export class UI {
     const onInput = (ev) => {
       const t = ev.target;
       if (!t.dataset || !t.dataset.ctl) return;
-      const v = t.type === 'number' || t.type === 'range' ? Number(t.value) : t.value;
+      const v =
+        t.type === 'checkbox' ? t.checked : t.type === 'number' || t.type === 'range' ? Number(t.value) : t.value;
       this.state.import[t.dataset.ctl] = PLACEMENT.has(t.dataset.ctl) ? v / 100 : v;
       this.actions.previewImport();
     };

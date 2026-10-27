@@ -68,19 +68,31 @@ export function fitRect(img, w, h, o = {}) {
   let k;
   if (fit === 'stretch') k = 1;
   else k = fit === 'cover' ? Math.max(w / bw, h / bh) : Math.min(w / bw, h / bh);
-  const dw = img.width * k * scale;
-  const dh = img.height * k * scale;
+  // `w` and `h` here are the face's CELL COUNT - the raster is one pixel per
+  // cell - so every number below is already measured in cells.
+  let dw = img.width * k * scale;
+  let dh = img.height * k * scale;
+  // Snap the box to whole cells. A board is a grid, and a picture whose left
+  // edge lands half-way through a cell has every one of its edges half a cell
+  // off, which is what turns a imported logo into a sheared one. Rounding the
+  // size as well as the position means the box occupies a whole number of cells
+  // at a whole cell offset - so a drag smaller than half a cell does nothing at
+  // all, which is correct: there is nowhere between the cells to go.
+  // Snapped by default; `snap: false` keeps the continuous box.
+  const snap = o.snap !== false;
+  if (snap) {
+    dw = Math.round(dw);
+    dh = Math.round(dh);
+  }
   const sw = quarter ? dh : dw;
   const sh = quarter ? dw : dh;
-  return {
-    dx: (w - sw) / 2 + (o.ox || 0) * w,
-    dy: (h - sh) / 2 + (o.oy || 0) * h,
-    sw,
-    sh,
-    rot,
-    dw,
-    dh,
-  };
+  let dx = (w - sw) / 2 + (o.ox || 0) * w;
+  let dy = (h - sh) / 2 + (o.oy || 0) * h;
+  if (snap) {
+    dx = Math.round(dx);
+    dy = Math.round(dy);
+  }
+  return { dx, dy, sw, sh, rot, dw, dh };
 }
 
 /**

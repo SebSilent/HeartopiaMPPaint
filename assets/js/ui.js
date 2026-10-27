@@ -134,6 +134,7 @@ export class UI {
       outlineBtn: document.getElementById('outlineBtn'),
       outlineNote: document.getElementById('outlineNote'),
       legend: document.getElementById('legend'),
+      copyRow: document.getElementById('copyRow'),
       importPanel: document.getElementById('importPanel'),
       importModes: document.getElementById('importModes'),
       drop: document.getElementById('drop'),
@@ -809,6 +810,13 @@ export class UI {
       const b = ev.target.closest('[data-legend]');
       if (b) this.actions.setColor(Number(b.dataset.legend));
     });
+    // Three buttons, one listener, and the format lives in the markup next to the
+    // label that names it - rather than in three handlers that can each drift.
+    if (e.copyRow)
+      e.copyRow.addEventListener('click', (ev) => {
+        const b = ev.target.closest('[data-copy]');
+        if (b) this.actions?.copyGrid?.(b.dataset.copy);
+      });
   }
 
   setOutlineInfo(has, inside, total, itemName) {

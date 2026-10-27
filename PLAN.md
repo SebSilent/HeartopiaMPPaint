@@ -80,15 +80,30 @@ undoable as one step.
   only while Shift is held).
 - [x] **Rectangle and ellipse**, outline and filled, from the Style chips. Shift also square-constrains a
   rectangle.
-- [x] **Polygon** by clicks - **but it closes on Enter, on Escape to abort, or by clicking back within 2
-  cells of the first vertex; there is no double-click handler anywhere in the app.** Two clicks is the
-  fastest close a person reaches for, so this is the one honest gap left in the shape tools.
+- [x] **Polygon** by clicks - closes on a **double-tap in the same cell**, on a click back within 2 cells
+  of the first vertex, on Enter, and aborts on Escape (`near(this.poly[0]) || dbl` in `input.js`). The
+  double-tap is timed by hand rather than read from `pointerdown.detail`: `preventDefault` on pointerdown
+  suppresses the compatibility mouse events that maintain the browser's click count, so `detail` never
+  reaches 2 in this app. Enter/Escape listen on the window, not `#stage`, which has no tabindex and would
+  never receive them. The closing click is dropped instead of pushed, so the final edge is not degenerate.
+  Filled vs outline comes from the Style chips - the polygon had to be added to `SHAPE_TOOLS` in `ui.js`
+  to get them, because `_closePolygon` commits through `shapeFilled` like every other shape tool.
 - [x] **Bucket fill, plus fill similar colour.** The similarity test is real CIE ΔE(2000) between shades
   (`shadeDeltaE`), not index distance - the palette is ordered by family, so index distance measures
   where a colour sits in a list. The table is built once per click, not per cell. Steps are named the way
   a person judges them: Exact / Close (6) / Broad (12). Empty is never a match, so a loose bucket cannot
   flood a blank face.
-- [ ] **Colour picker** improvements: recent shades row, and Alt-drag to sample without switching tool
+- [x] **Colour picker** improvements: a **recent shades row** (`game/recents.js`, `RECENT_MAX` 8, in its own
+  versioned key with storage injected the way `game/backup.js` does it - deliberately *not* in the profile,
+  because `saveProfile({nick, color, device})` replaces the object rather than merging, so a field added
+  there is quietly lost on the next join; and a phone in private mode has a localStorage that throws on
+  write, which has to cost a convenience and not the app), and **Alt-drag samples the shade under the
+  pointer without switching tool**. Two things that were wrong on the way: boot recorded the default
+  starting shade as though someone had chosen it, and the sample is read before the `canPaint` guard
+  because it changes nothing, so it works while the room is still handing you a slot.
+  `tools/probe_recents.mjs` found a probe bug worth remembering: a capture listener on `#base` never fires,
+  because `#fx` is a sibling drawn *over* it and is what actually receives the pointer - so the app was
+  sampling correctly while the probe reported that it was not.
 - [x] **Brush shapes.** Done in `game/shapes.js` plus the shape row in `ui.js`: square (the plain
   stroke), round past size 1, and the hard spray, which scatters a fresh random dab inside the round
   footprint with its own density control (`sprayOffsets`, `st.sprayDensity`). Covered by unit
@@ -270,6 +285,28 @@ The part that has to be exactly right.
   in `tools/meshopenings.mjs` + `tools/solidcheck.mjs` + `tools/meshopenings.txt` - re-run them before
   believing any new sixth idea. Boundary welding was also tried and A/B'd to zero visible change
   (the harness is gone, its numbers were: trapped backdrop pixels unchanged on all six garments, `0% closed`
-  on every one), so that is not it either. `tools/meshholes.mjs` is the probe that counts trapped backdrop
-  pixels per garment and still measures the defect. The fix, if it happens, belongs in the renderer: fill
-  only the pixels the shell leaves uncovered, which is inherently view-dependent.
+  on every one), so that is not it either.
+- **The renderer-side fix is in**: `game/coverage.js` (pure rule) plus `_fillGaps` in `render3d.js`. The
+  frame's own projected triangles are rebuilt into a coverage mask over the garment's projected box at full
+  device resolution; backdrop enclosed by that mask is filled with the nearest rim cloth colour darkened by
+  depth; and nothing is painted unless the pixel is still the backdrop colour in the finished frame.
+  Coverage comes from **geometry, never colour**, because garment shading passes through `#c2ccd3` and a
+  colour match finds shadow bands on real cloth. Trapped backdrop px over six orbit angles:
+  `tshirt 250 -> 35`, `dress 177 -> 83`, cavities `63 -> 0` on both.
+- Two traps in that fix, each of which cost a round trip. **A mask scaled to 0.46 left the worst holes
+  invisible**: they are single-pixel seam cracks, and at that scale one device pixel is not even one mask
+  pixel, so the pass was blind to exactly the thing it exists to fix. And **dilating the mask with a stroke
+  dilated more than the frame bleeds** - the real draw expands mesh triangles by `0.45 + 0.18*dpr`, so a
+  1.5px stroke marked 1-2px cracks as covered cloth while they stayed open on screen. Rebuild the frame's
+  geometry, including its degenerate-area skip; do not approximate it.
+- `tools/probe_gapfill.mjs` exists because `meshholes.mjs` **cannot see a false fill**: it counts backdrop
+  trapped inside cloth, so a bug that paints a dark pixel onto cloth makes its numbers look *better*. The
+  only way to know is to render one frame with `?gapFill=0` and the next frame with it on and diff every
+  pixel. The number that changes moves with the pose (tshirt: 55 px at rest, 14 at the angle the probe now
+  orbits to), so what the probe asserts is the invariant, not the count: **every changed pixel was backdrop
+  first, and none of them was cloth** - true in both runs, on tshirt, dress and bucket.
+- **A render throw is invisible to a probe that listens for `pageerror`.** The app's 3D loop catches it,
+  toasts `3D preview stopped: …`, hides the panel and stops, so the canvas goes blank and the tool reports
+  "the canvas is empty or unsized" while the cause sits in a toast nothing was reading. `meshholes.mjs` now
+  reads the toast in that branch. The bug that found this one was a `const` reassigned in a rarely-taken
+  branch: frame 1 was fine and frame 2 killed the preview.

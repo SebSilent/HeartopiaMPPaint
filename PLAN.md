@@ -155,9 +155,15 @@ The headline feature. A photo goes in, a paintable board comes out, and it can o
 - [x] **Palette mapping by perceptual distance**: CIE ΔE(2000) through `PaletteIndex`, whose nearest-colour
   result is memoised in a `Map` over the 125 shades, so a whole import does not re-run deltaE2000 per
   pixel per candidate.
-- [ ] **Controls** - mostly there: brightness, contrast, saturation and a posterise strength
-  (`maxColors`, which reduces the palette by perceptual distance). **Sharpness is not implemented**, and
-  nothing in `ui/importer.js` hints at it.
+- [x] **Controls**: brightness, contrast, saturation, a posterise strength (`maxColors`, which reduces the
+  palette by perceptual distance) and **Sharpen**. The last one is a one-way 0..100 unsharp mask
+  (`sharpen` in `color/science.js`) applied to the raster *after* the downsample, because the downsample is
+  what introduced the softness - shrinking a photo to board size is a box filter and a box filter is a
+  blur. Two traps, both pinned by `test/sharpen.test.js` (13): out-of-frame neighbours are clamped rather
+  than read as black (or every import arrives wearing a charcoal frame), and a transparent neighbour counts
+  as the centre's own colour (PNGs store black inside transparent pixels, so averaging them in prints a
+  dark outline along every silhouette). The ring excludes the centre, or the high pass cancels itself and
+  the slider feels dead.
 - [x] **Placement handles**: move, scale and rotate in 90 degree steps, and the preview is *draggable* -
   `fitRect(img, w, h, {fit, rot, zoom, ox, oy})` is the single source of that arithmetic, so the picture
   you drag and the cells you get are the same numbers. **Not snapped to cells**: `ox`/`oy` are continuous
@@ -196,7 +202,19 @@ The part that has to be exactly right.
   boards are pixel art, and a smoothed export is a board of colours that exist on no palette. Multi-face
   garments go on one sheet, each face labelled with its own size, under a filename carrying the board,
   the room code and the date.
-- [ ] **Copy-to-clipboard grid** of palette indices and of hex values, for pasting into other tools.
+- [x] **Copy-to-clipboard grid** of palette indices and of hex values, for pasting into other tools.
+  Shipped as three formats in `game/gridtext.js` because the job is keying the board into the game by hand
+  and a PNG cannot do that: the game's own `06-1` codes to read off beside it, indices for another tool,
+  hex for a colour picker. Tab-separated, one token per cell, and an unpainted cell is a **dot in all
+  three** - empty is the absence of paint, not colour 0, and a `0` in an index column reads like a colour
+  that does not exist. Copies the active face only (the thing on screen; three concatenated faces are not
+  readable next to the game), and the toast says which face and how many of its cells are painted, so an
+  empty face admits it instead of claiming a board. Covered by unit (`test/gridtext.test.js` - 14,
+  including a round trip that rebuilds the board from the text in all three formats and requires it to
+  match cell for cell) and by browser (`tools/probe_gridtext.mjs` - 17). Two things the probe learned the
+  hard way: **the clipboard rewrites LF as CRLF** (10,242 chars in, 10,321 back - one per newline), so the
+  comparison is on the payload and not the bytes; and the app's `#fx` canvas is a sibling drawn *over*
+  `#base`, so a listener on `#base` sees nothing.
 - [ ] **Reference sheet PNG**: the board at scale with a coordinate ruler and a numbered shade legend
   of only the colours used, so a big board is reproducible in game without guessing.
 - [ ] **Grid overlay toggle on export** for printing/trace use.

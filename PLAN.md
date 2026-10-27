@@ -164,11 +164,16 @@ The headline feature. A photo goes in, a paintable board comes out, and it can o
   as the centre's own colour (PNGs store black inside transparent pixels, so averaging them in prints a
   dark outline along every silhouette). The ring excludes the centre, or the high pass cancels itself and
   the slider feels dead.
-- [x] **Placement handles**: move, scale and rotate in 90 degree steps, and the preview is *draggable* -
-  `fitRect(img, w, h, {fit, rot, zoom, ox, oy})` is the single source of that arithmetic, so the picture
-  you drag and the cells you get are the same numbers. **Not snapped to cells**: `ox`/`oy` are continuous
-  fractions, which is right for a photo and wrong for a board, where half a cell of drift moves every
-  edge. Snapping is the remaining half of this one.
+- [x] **Placement handles**: move, scale and rotate in 90 degree steps, all snapped to cells, and the
+  preview is *draggable* - `fitRect(img, w, h, {fit, rot, zoom, ox, oy, snap})` is the single source of that
+  arithmetic, so the picture you drag, the preview you read and the cells you commit cannot disagree.
+  Snapping rounds the size *before* the rotation swap and the position after it, so the occupied box lands
+  on whole cells in every turn; a drag under half a cell therefore does nothing, which is correct because
+  there is nowhere between the cells to go. It is a visible checkbox rather than a silent rule, because a
+  drag that refuses to move looks broken unless you can see what makes it. Covered by unit
+  (`test/import-fit.test.js` - 6 new: integrality across four turns and three fits, the sub-cell no-op, the
+  one-cell step, the centre shoved no more than three-quarters of a cell, the turned box snapping after the
+  swap) and by browser (`tools/probe_snap.mjs` - 11, dragging the real preview).
 - [ ] **Import as a new layer**, never destructively, so it can be erased or lowered onto.
 - [ ] **Quantise the live board**: run the same pipeline over what is already painted, to see how it
   will read in game. The parts all exist and are unused together - `reduceColors` over the live cells would

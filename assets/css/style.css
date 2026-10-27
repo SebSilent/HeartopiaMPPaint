@@ -689,6 +689,9 @@ kbd {
 .ctl output { min-width: 44px; text-align: right; font-family: var(--font-pixel); font-weight: 400; }
 /* A grid item stretches, which for a checkbox means a 200px-wide tick box.
    Kept to its own size and pushed to the label it belongs to. */
+.check-row { display: flex; align-items: center; gap: 8px; }
+.check-row input { width: 16px; height: 16px; accent-color: var(--accent-deep); }
+.check-row label { font-size: 0.8rem; font-weight: 700; color: var(--ink-2); cursor: pointer; }
 .ctl input[type='checkbox'] {
   justify-self: start;
   width: 18px;

@@ -1257,6 +1257,42 @@ function fallbackCopy(text, done) {
 }
 
 /**
+ * The cell grid, for printing a face out and tracing it.
+ *
+ * Opt-in and off by default, because the export's whole job is to be the thing
+ * the game reads, and a grid is not that.
+ *
+ * The half-pixel offsets are the point: a 1px stroke centred on an integer
+ * coordinate lands across two device pixels and prints as a grey smear, which on
+ * a board you are trying to read cell-by-cell is worse than no grid at all.
+ * Every tenth line is stronger so you can find your place on a 102 x 154 face
+ * without counting cells from the edge.
+ */
+function drawCellGrid(ctx, x, y, cols, rows, cell) {
+  const x0 = Math.round(x);
+  const y0 = Math.round(y);
+  const wpx = cols * cell;
+  const hpx = rows * cell;
+  ctx.save();
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= cols; i++) {
+    ctx.strokeStyle = i % 10 === 0 ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.18)';
+    ctx.beginPath();
+    ctx.moveTo(x0 + i * cell + 0.5, y0 + 0.5);
+    ctx.lineTo(x0 + i * cell + 0.5, y0 + hpx + 0.5);
+    ctx.stroke();
+  }
+  for (let j = 0; j <= rows; j++) {
+    ctx.strokeStyle = j % 10 === 0 ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.18)';
+    ctx.beginPath();
+    ctx.moveTo(x0 + 0.5, y0 + j * cell + 0.5);
+    ctx.lineTo(x0 + wpx + 0.5, y0 + j * cell + 0.5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+/**
  * Export every face, each at exactly one pixel per cell - which is what the
  * game reads. A multi-face design goes out as one sheet with the faces laid
  * side by side and labelled, because four unlabeled strips is not a usable
@@ -1290,6 +1326,7 @@ function exportPNG() {
     g.fillRGBA(new Uint32Array(img.data.buffer));
     octx.putImageData(img, 0, 0);
     ctx.drawImage(off, x, gap + label, g.w * cell, g.h * cell);
+    if (state.exportGrid) drawCellGrid(ctx, x, gap + label, g.w, g.h, cell);
     ctx.fillStyle = '#3a2a1c';
     ctx.font = `${Math.max(11, Math.min(15, cell * 4))}px "Baloo 2", system-ui, sans-serif`;
     ctx.fillText(`${meta[i].label} ${g.w}×${g.h}`, x, gap + label - 5);

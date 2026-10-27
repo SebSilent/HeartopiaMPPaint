@@ -27,6 +27,7 @@ import {
   savedCount,
 } from './game/backup.js';
 import { loadRecents, pushRecent, saveRecents } from './game/recents.js';
+import { gridText, countPainted } from './game/gridtext.js';
 import { History, patchWrite } from './game/history.js';
 import { Blueprint } from './ui/blueprint.js';
 import { Preview3D } from './game/render3d.js';
@@ -247,6 +248,16 @@ const actions = {
   },
   copyInvite: () => copyInvite(),
   exportPNG: () => exportPNG(),
+  /**
+   * Copy the face you are looking at, as a text grid.
+   *
+   * The active face rather than every face: this is the thing on screen, and a
+   * payload with three faces concatenated is not something you can prop next to
+   * the game and read off. The toast says which face went and how many of its
+   * cells are actually painted, because a bare "copied" on a board you forgot to
+   * paint is how somebody loses an hour.
+   */
+  copyGrid: (fmt) => copyGrid(fmt),
   clearBoard: () => clearBoard(),
   setBoard: (ratio, level) => setBoard(ratio, level),
   setItem: (id) => setItem(id),
@@ -1196,6 +1207,37 @@ function copyInvite() {
   if (navigator.clipboard?.writeText) {
     navigator.clipboard.writeText(url).then(done, () => fallbackCopy(url, done));
   } else fallbackCopy(url, done);
+}
+
+/** What each format is called when the toast has to say it in English. */
+const COPY_WORDS = { code: "the game's colour codes", index: 'palette indices', hex: 'hex colours' };
+
+function copyGrid(fmt) {
+  if (!room) return;
+  const grid = room.design.grid;
+  const text = gridText(grid, fmt);
+  if (!text) {
+    ui.toast('This face has no cells to copy', 'warn', 2400);
+    return;
+  }
+  const meta = room.design.item.faces[room.design.active];
+  const label = meta?.label || `face ${room.design.active + 1}`;
+  const painted = countPainted(text, fmt);
+  const word = COPY_WORDS[fmt] || fmt;
+  const done = () =>
+    ui.toast(
+      painted
+        ? `Copied ${label}: ${painted} of ${grid.n} cells as ${word}`
+        : `Copied ${label} as ${word} - every cell is blank`,
+      painted ? 'good' : 'info',
+      2800
+    );
+  // Same path the invite link uses: the async clipboard when there is a secure
+  // context and a user gesture, a hidden textarea when there is not, and the
+  // text itself in a toast if even that fails. A copy that silently does nothing
+  // is the one outcome worse than no copy button at all.
+  if (navigator.clipboard?.writeText) navigator.clipboard.writeText(text).then(done, () => fallbackCopy(text, done));
+  else fallbackCopy(text, done);
 }
 
 function fallbackCopy(text, done) {

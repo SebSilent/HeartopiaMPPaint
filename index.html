@@ -140,6 +140,16 @@
         <div class="seg small tight" id="blockSizes"></div>
         <button id="tickBlock" class="btn ghost small" type="button" title="Tick the block you last painted in (.)">Tick block</button>
       </div>
+      <!-- Here rather than in the top bar, because this is the panel you open to
+           key a board into the game by hand, and the copy is the last step of
+           exactly that job. -->
+      <div class="panel-row" id="copyRow">
+        <span class="dock-label">Copy grid</span>
+        <button class="btn ghost small" type="button" data-copy="code" title="Copy this face as the game's own group-shade codes, to read off next to the game">Codes</button>
+        <button class="btn ghost small" type="button" data-copy="index" title="Copy this face as palette indices, for another tool">Indices</button>
+        <button class="btn ghost small" type="button" data-copy="hex" title="Copy this face as hex colours, for a colour picker">Hex</button>
+      </div>
+      <p class="fine">One token per cell, tabs between cells. A dot is a cell you leave blank.</p>
       <p class="fine" id="traceNote"></p>
       <div id="legend" class="legend"></div>
     </section>

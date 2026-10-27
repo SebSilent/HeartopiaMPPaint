@@ -14,8 +14,35 @@
  */
 
 import { panelsFor } from './model3d.js';
+import { enclosedHoles, cavityShade } from './coverage.js';
 
 const RAD = Math.PI / 180;
+
+/**
+ * The largest enclosed backdrop region the gap pass will paint, in DEVICE
+ * pixels of the preview canvas. Anything bigger is an opening - the neck, a
+ * sleeve seen end-on, the air under a raised arm - and pretending otherwise
+ * paints a dark slab where the player expects to see through.
+ *
+ * 600 is about a 25x25 square: comfortably a seam crack or a pinhole, and an
+ * order of magnitude below the neck opening of a garment that fills the panel.
+ */
+const MAX_HOLE_AREA_PX = 600;
+
+/** Cap on the long side of the coverage mask, which is the garment's projected
+ *  box. The box normally fits inside this and the mask runs at full device
+ *  resolution, which is the only way a one-pixel seam crack can be seen at all.
+ *  A garment that fills an unusually large panel is scaled down instead, and the
+ *  fill is smoothed back up - a cavity is soft, so that costs very little. */
+const MASK_LONG_SIDE = 512;
+
+/**
+ * The studio backdrop, in one place. render() fills with it and _fillGaps()
+ * checks against it before painting anything, so the two cannot drift apart and
+ * leave the pass filling pixels that were never backdrop.
+ */
+const BACKDROP = '#c2ccd3';
+const BACKDROP_RGB = [194, 204, 211];
 // Roughly along the default camera, so the face you are looking at comes out
 // white and only the sides fall away. The old [0.35,0.55,0.9] peaked at 0.72 on
 // every panel, which is why the garment read as dark whatever the shading did.
@@ -93,6 +120,11 @@ export class Preview3D {
     this._tris = [];
     this._cache = new Map();
     this._dirty = true;
+    // Set from CONFIG.d3.gapFill by the app. A property rather than an import so
+    // the renderer stays testable and the switch stays a single place; `?gapFill=0`
+    // renders the same frame without the pass, which is what makes the two
+    // comparable pixel for pixel.
+    this.gapFill = true;
   }
 
   /**
@@ -327,7 +359,7 @@ export class Preview3D {
     // extremes: a face square to the lamp measures about 235 and a turned one
     // about 160, so a backdrop at 202 makes the lit side read white and the
     // shaded side read solid. Near-white here made the whole garment look grey.
-    ctx.fillStyle = '#c2ccd3';
+    ctx.fillStyle = BACKDROP;
     ctx.fillRect(0, 0, w, h);
     if (!this._tris.length) return;
 
@@ -462,6 +494,201 @@ export class Preview3D {
       drawTri(ctx, v.p, v.q, v.r, v.t.u, v.t.v, v.t.w2, v.t.tex, v.lit);
       ctx.restore();
     }
+    this._fillGaps(ctx, w, h, bleed);
+  }
+
+  /**
+   * Paint the backdrop that is trapped inside the garment.
+   *
+   * The shell is open, so the renderer draws both of its faces and the painter
+   * sort picks what wins. That is right for a shell and still leaves small
+   * islands of backdrop sealed inside the silhouette where two panels fail to
+   * meet - they drift as you orbit, and they are what reads as "holes in the
+   * clothing". Sealing them in the mesh was measured and rejected (see
+   * game/coverage.js), so this fixes it per frame, in the one place that knows
+   * what the camera is doing.
+   *
+   * Coverage comes from the geometry, never from the colour: the backdrop is
+   * #c2ccd3 and the garment's own shading passes straight through that value, so
+   * colour-matching the background finds shadow bands on cloth and would paint
+   * them darker. Drawing the triangles solid into a small mask cannot lie.
+   */
+  _fillGaps(ctx, w, h, bleed) {
+    const view = this._drawn;
+    if (!view || !view.length) return;
+    if (!this.gapFill) {
+      this._gapPx = 0;
+      this._gapFound = 0;
+      this._gapSkipped = 'off';
+      return;
+    }
+    // Three offscreen canvases, so this needs a DOM. The Node tests drive the
+    // painter sort and the lining shading through a stubbed context and never
+    // look at pixels, and the rule itself is pure - it lives in game/coverage.js
+    // with its own tests. What the pass is *for* is measured in a browser, by
+    // tools/meshholes.mjs, which counts trapped backdrop pixels before and after.
+    if (typeof document === 'undefined') {
+      this._gapPx = 0;
+      this._gapSkipped = 'no dom';
+      return;
+    }
+    // Work over the garment's projected box at full device resolution, not the
+    // whole panel at a reduced one. The first version did the latter and left
+    // about a third of the defect standing: the worst remaining holes were single
+    // backdrop pixels - hairline cracks between two mesh triangles - and at 0.46
+    // scale a single device pixel is not even one mask pixel, so the pass could
+    // not see the thing it exists to fix. The box is usually well under half the
+    // panel, which pays for the resolution.
+    let x0 = w;
+    let y0 = h;
+    let x1 = 0;
+    let y1 = 0;
+    for (const v of view) {
+      for (const p of [v.p, v.q, v.r]) {
+        if (p[0] < x0) x0 = p[0];
+        if (p[0] > x1) x1 = p[0];
+        if (p[1] < y0) y0 = p[1];
+        if (p[1] > y1) y1 = p[1];
+      }
+    }
+    x0 = Math.max(0, Math.floor(x0) - 1);
+    y0 = Math.max(0, Math.floor(y0) - 1);
+    x1 = Math.min(w, Math.ceil(x1) + 1);
+    y1 = Math.min(h, Math.ceil(y1) + 1);
+    const bw = x1 - x0;
+    const bh = y1 - y0;
+    if (bw < 3 || bh < 3) return;
+    const k = Math.min(1, MASK_LONG_SIDE / Math.max(bw, bh));
+    const mw = Math.max(1, Math.round(bw * k));
+    const mh = Math.max(1, Math.round(bh * k));
+    if (mw < 3 || mh < 3) return;
+
+    // 1. coverage, at mask resolution, from the same projected triangles the
+    // frame was drawn with. The mask has to agree with the frame about what is
+    // cloth: narrower than the frame and this pass paints shadow onto cloth,
+    // wider than the frame and the cracks it cannot see stay open.
+    const covC = this._covC || (this._covC = document.createElement('canvas'));
+    if (covC.width !== mw || covC.height !== mh) {
+      covC.width = mw;
+      covC.height = mh;
+    }
+    const cc = covC.getContext('2d');
+    cc.setTransform(k, 0, 0, k, -x0 * k, -y0 * k);
+    cc.clearRect(0, 0, mw, mh);
+    // Rebuild the frame's own geometry, bleed and all, rather than approximating
+    // it with a stroke. Stroking by a fixed width dilated the mask slightly more
+    // than the frame bleeds, so the two-pixel specks that were left standing at
+    // full resolution were invisible to the mask that was supposed to find them.
+    // The degenerate-area test is copied for the same reason: a sliver the frame
+    // skips must be skipped here too, or its backdrop is never counted as a hole.
+    cc.fillStyle = '#fff';
+    for (const v of view) {
+      let p = v.p;
+      let q = v.q;
+      let r = v.r;
+      const area = (q[0] - p[0]) * (r[1] - p[1]) - (r[0] - p[0]) * (q[1] - p[1]);
+      if (Math.abs(area) < 1e-4) continue;
+      if (v.t.two && bleed) {
+        const cx = (p[0] + q[0] + r[0]) / 3;
+        const cy = (p[1] + q[1] + r[1]) / 3;
+        const rad =
+          (Math.hypot(p[0] - cx, p[1] - cy) + Math.hypot(q[0] - cx, q[1] - cy) + Math.hypot(r[0] - cx, r[1] - cy)) / 3;
+        const e = 1 + bleed / Math.max(rad, bleed);
+        p = [cx + (p[0] - cx) * e, cy + (p[1] - cy) * e];
+        q = [cx + (q[0] - cx) * e, cy + (q[1] - cy) * e];
+        r = [cx + (r[0] - cx) * e, cy + (r[1] - cy) * e];
+      }
+      cc.beginPath();
+      cc.moveTo(p[0], p[1]);
+      cc.lineTo(q[0], q[1]);
+      cc.lineTo(r[0], r[1]);
+      cc.closePath();
+      cc.fill();
+    }
+    const covImg = cc.getImageData(0, 0, mw, mh).data;
+    const n = mw * mh;
+    // Reused between frames, because the box size jitters by a pixel as the
+    // model settles and allocating a coverage array per frame is work nobody
+    // asked for. `let`, not `const`: the first version declared it const and
+    // reassigned it, which threw the moment the box changed size - frame 1 was
+    // fine, frame 2 killed the preview, and the only trace was a toast.
+    let cov = this._cov;
+    if (!cov || cov.length !== n) {
+      cov = new Uint8Array(n);
+      this._cov = cov;
+    }
+    for (let i = 0; i < n; i++) cov[i] = covImg[i * 4 + 3] > 127 ? 1 : 0;
+
+    // 2. the rule. The area limit is stated in device pixels and converted, so
+    // the threshold means the same thing whatever the mask scale works out at.
+    const maxFill = Math.max(2, Math.round(MAX_HOLE_AREA_PX * k * k));
+    const holes = enclosedHoles(cov, mw, mh, maxFill);
+    // Found vs painted: the difference is what the frame check below refused, and
+    // it is the number that says whether this pass is guessing or measuring.
+    this._gapFound = holes.px;
+    this._gapIslands = holes.holes;
+    this._gapKept = holes.kept;
+    if (!holes.px) {
+      this._gapPx = 0;
+      return;
+    }
+
+    // 3. the colour of the cloth each hole pixel leans on, read from the frame
+    // that was just finished - so it is the painted garment's own shade, tint and
+    // all, not an approximation of it.
+    const colC = this._colC || (this._colC = document.createElement('canvas'));
+    if (colC.width !== mw || colC.height !== mh) {
+      colC.width = mw;
+      colC.height = mh;
+    }
+    const lc = colC.getContext('2d');
+    lc.setTransform(1, 0, 0, 1, 0, 0);
+    lc.clearRect(0, 0, mw, mh);
+    lc.drawImage(this.canvas, x0, y0, bw, bh, 0, 0, mw, mh);
+    const frame = lc.getImageData(0, 0, mw, mh).data;
+
+    // 4. build the fill at mask scale, then scale it up with smoothing. A hard
+    // upscale would put a blocky dark wart where a crack used to be.
+    const fillC = this._fillC || (this._fillC = document.createElement('canvas'));
+    if (fillC.width !== mw || fillC.height !== mh) {
+      fillC.width = mw;
+      fillC.height = mh;
+    }
+    const fc = fillC.getContext('2d');
+    const out = fc.createImageData(mw, mh);
+    const od = out.data;
+    let painted = 0;
+    for (let p = 0; p < n; p++) {
+      if (!holes.fill[p]) continue;
+      const s = holes.src[p] * 4;
+      const o = p * 4;
+      // Geometry says hole; the frame says whether it really is. The bleed is a
+      // sub-pixel guess in both passes, and a mask that is slightly wider than
+      // what was painted would otherwise put a dark pixel on cloth. The backdrop
+      // is a flat fill, so this test is exact, and it can only ever skip a fill.
+      if (
+        Math.abs(frame[o] - BACKDROP_RGB[0]) > 4 ||
+        Math.abs(frame[o + 1] - BACKDROP_RGB[1]) > 4 ||
+        Math.abs(frame[o + 2] - BACKDROP_RGB[2]) > 4
+      )
+        continue;
+      const sh = cavityShade(holes.dist[p]);
+      od[o] = frame[s] * sh;
+      od[o + 1] = frame[s + 1] * sh;
+      od[o + 2] = frame[s + 2] * sh;
+      od[o + 3] = 255;
+      painted++;
+    }
+    this._gapPx = painted;
+    fc.putImageData(out, 0, 0);
+    if (!painted) return;
+
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(fillC, 0, 0, mw, mh, x0, y0, bw, bh);
+    ctx.restore();
   }
 
   _project(p, dist, focal, w, h, off) {

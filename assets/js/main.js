@@ -924,6 +924,7 @@ function open3d() {
       (itemId, faceId) => outlineFor(itemId, faceId) || faceOutline(itemId, faceId)
     );
     bindOrbit(cv);
+    preview3d.gapFill = CONFIG.d3.gapFill;
   }
   rebuild3d();
   if (!d3raf) {

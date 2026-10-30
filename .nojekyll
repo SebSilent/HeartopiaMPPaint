@@ -1,0 +1,7 @@
+# GitHub Pages runs Jekyll by default, which skips any path starting with an
+# underscore and adds a build step this repo does not want. Nothing tracked here
+# starts with "_" today - `git ls-files | findstr /R "^_"` is empty - so this file
+# is insurance, not a fix: it makes Pages serve the folder verbatim, so a future
+# _assets/ or _data/ directory cannot silently 404 in production only.
+#
+# The filename is the mechanism. Its contents are ignored.

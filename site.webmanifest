@@ -1,0 +1,32 @@
+{
+  "name": "Heartopia Painting Tool - Multiplayer Pixel Art Studio",
+  "short_name": "Heartopia Paint",
+  "description": "Multiplayer pixel art editor for Heartopia custom designs. The game's real 125-shade palette, exact in-game grids, 3D garment previews and pixel-exact PNG export.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#221b17",
+  "theme_color": "#74584d",
+  "categories": ["games", "graphics", "entertainment"],
+  "icons": [
+    {
+      "src": "./assets/img/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/img/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./assets/img/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

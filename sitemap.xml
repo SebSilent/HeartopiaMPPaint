@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One URL, because the tool is one page. Every variant a player can land on
+  (?room=CODE, ?local=1, ?item=..., ?relay=...) is the same document with a
+  different query string, and index.html declares the bare URL canonical - so
+  listing the variants here would ask Google to index duplicates of one page.
+
+  Bump <lastmod> when the tool changes, not on every commit.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://sebsilent.github.io/HeartopiaMPPaint/</loc>
+    <lastmod>2026-10-30</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>

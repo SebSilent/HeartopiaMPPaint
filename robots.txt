@@ -1,0 +1,15 @@
+# Heartopia Painting Tool - https://sebsilent.github.io/HeartopiaMPPaint/
+#
+# Everything here is public and worth crawling. The app is one page: the board,
+# the palette and the item picker are all in the served HTML, so there is no
+# route to hide and nothing that needs a crawl budget.
+#
+# Room links carry ?room=CODE and the offline sandbox is ?local=1. Those are the
+# same document with a different query string, and index.html points at the bare
+# URL with <link rel="canonical">, so they are not blocked here - blocking them
+# would stop Google seeing the canonical tag that resolves them.
+
+User-agent: *
+Allow: /
+
+Sitemap: https://sebsilent.github.io/HeartopiaMPPaint/sitemap.xml

@@ -8,9 +8,14 @@
     "test": "node --test",
     "dev": "node tools/serve.cjs",
     "relay": "node server/relay.js",
-    "palette": "node tools/build_palette_module.cjs"
+    "palette": "node tools/build_palette_module.cjs",
+    "card": "node tools/build_social_card.mjs",
+    "icons": "node tools/build_icons.mjs",
+    "badges": "node tools/build_badges.mjs",
+    "assets": "npm run card && npm run icons && npm run badges",
+    "check:seo": "node tools/check_seo.mjs && node tools/check_social_card.mjs && node tools/check_readme_numbers.mjs && node tools/check_readme_links.mjs"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "engines": {
     "node": ">=18"
   },

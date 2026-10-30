@@ -4,23 +4,165 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>Heartopia Multiplayer Paint</title>
-<meta name="description" content="Paint Heartopia designs together in your browser. Canvases, clothes and furniture on one shared board, with live cursors, the full palette, and mouse, pen or touch.">
+<title>Heartopia Painting Tool | Multiplayer Pixel Art Editor</title>
+<meta name="description" content="Paint Heartopia custom designs together in real time. The game's 125-shade palette, exact in-game grids, 3D garment previews and pixel-exact PNG export.">
 
+<!-- Canonical: one URL for the tool, so the ?room= / ?local= variants do not
+     split the ranking signal into duplicate pages. -->
+<link rel="canonical" href="https://sebsilent.github.io/HeartopiaMPPaint/">
+<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1">
+
+<!-- Open Graph - the card shown on Reddit, Discord, Facebook and X. -->
 <meta property="og:type" content="website">
-<meta property="og:title" content="Heartopia Multiplayer Paint">
-<meta property="og:description" content="A shared pixel board for Heartopia players. Canvases, garments and furniture, painted at the same time, on any device.">
+<meta property="og:site_name" content="Heartopia Painting Tool">
+<meta property="og:locale" content="en_US">
+<meta property="og:title" content="Heartopia Painting Tool | Multiplayer Pixel Art Editor">
+<meta property="og:description" content="A free, open-source pixel editor for Heartopia custom designs. Paint one shared board with friends live, on the game's real grids and 125 shades, then spin the garment in 3D and export a PNG the game will match.">
+<meta property="og:url" content="https://sebsilent.github.io/HeartopiaMPPaint/">
+<meta property="og:image" content="https://sebsilent.github.io/HeartopiaMPPaint/assets/img/social-card.png">
+<meta property="og:image:secure_url" content="https://sebsilent.github.io/HeartopiaMPPaint/assets/img/social-card.png">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="Heartopia Painting Tool - a multiplayer pixel art board with a heart painted in the game's own shades, two live player cursors, and the 13-colour palette strip">
+
+<!-- Twitter / X -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Heartopia Painting Tool | Multiplayer Pixel Art Editor">
+<meta name="twitter:description" content="Paint Heartopia custom designs with friends on one live shared board. 125 real shades, exact in-game grids, 3D garment preview, PNG export. Free and open source.">
+<meta name="twitter:image" content="https://sebsilent.github.io/HeartopiaMPPaint/assets/img/social-card.png">
+<meta name="twitter:image:alt" content="Heartopia Painting Tool - multiplayer pixel art board with live cursors and the 125-shade palette">
+
 <meta name="theme-color" content="#74584d">
+<meta name="color-scheme" content="light dark">
+<meta name="author" content="SebSilent">
+<meta name="application-name" content="Heartopia Painting Tool">
+<meta name="apple-mobile-web-app-title" content="Heartopia Paint">
+
+<!-- Keyword targets, for the crawler and for anyone reading the source:
+     heartopia painting tool, heartopia custom designs, heartopia pixel editor,
+     heartopia clothing grid, heartopia furniture texture, heartopia palette. -->
+<meta name="subject" content="Heartopia custom design tool - multiplayer pixel art editor">
+<meta name="rating" content="general">
+<meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2374584d'/%3E%3Crect x='5' y='5' width='10' height='10' fill='%23ea696d'/%3E%3Crect x='17' y='5' width='10' height='10' fill='%23fdab34'/%3E%3Crect x='5' y='17' width='10' height='10' fill='%2340b678'/%3E%3Crect x='17' y='17' width='10' height='10' fill='%232981c0'/%3E%3C/svg%3E">
+<!-- Installable. The SVG data URI above is what the browser tab gets, but iOS
+     ignores SVG for Add to Home Screen and a manifest cannot list one, so these
+     PNGs are generated from the same four squares by tools/build_icons.mjs.
+     There is no service worker: installing gives a standalone window and an
+     icon, not an offline copy. -->
+<link rel="apple-touch-icon" href="./assets/img/apple-touch-icon.png">
+<link rel="manifest" href="./site.webmanifest">
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Silkscreen&display=swap">
 <link rel="stylesheet" href="./assets/css/style.css">
+
+<!-- Structured data. SoftwareApplication because that is what this is - a tool,
+     not an article - plus the FAQ that the README answers in the same words.
+     No aggregateRating: there is no rating system, and inventing one is the kind
+     of thing that gets structured data ignored entirely. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "SoftwareApplication",
+      "@id": "https://sebsilent.github.io/HeartopiaMPPaint/#app",
+      "name": "Heartopia Painting Tool",
+      "alternateName": ["Heartopia Multiplayer Paint", "Heartopia pixel editor"],
+      "url": "https://sebsilent.github.io/HeartopiaMPPaint/",
+      "description": "A free, open-source multiplayer pixel art editor for making Heartopia custom designs. Paint one shared board with others in real time, on the game's exact canvas and garment grids, using only the game's 125 shades, preview the result on the garment's own 3D fabric mesh, and export a pixel-exact PNG.",
+      "applicationCategory": "MultimediaApplication",
+      "applicationSubCategory": "pixel art editor",
+      "operatingSystem": "Any modern web browser - Windows, macOS, Linux, iOS, Android",
+      "softwareVersion": "0.1.0",
+      "inLanguage": "en",
+      "isAccessibleForFree": true,
+      "license": "https://github.com/SebSilent/HeartopiaMPPaint/blob/main/LICENSE",
+      "softwareHelp": "https://github.com/SebSilent/HeartopiaMPPaint#readme",
+      "screenshot": "https://sebsilent.github.io/HeartopiaMPPaint/assets/img/social-card.png",
+      "featureList": [
+        "Live multiplayer shared board with real-time cursors",
+        "The game's real 125-shade palette in 13 groups",
+        "All 20 in-game canvas sizes, exact dimensions",
+        "22 game items across 50 faces: clothing, furniture and the book",
+        "Enforced game silhouettes - unpaintable cells stay unpaintable",
+        "3D fabric mesh garment preview, repainted on every stroke",
+        "Photo import with dithering and perceptual palette mapping",
+        "Pixel-exact PNG export and clipboard grid in game colour codes",
+        "Brush, eraser, eyedropper, fill, line, rectangle, ellipse, polygon, text, mirror",
+        "Undo and redo, one step per stroke, shared across the room",
+        "No install, no account, no build step"
+      ],
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": {
+        "@type": "Person",
+        "name": "SebSilent",
+        "url": "https://github.com/SebSilent"
+      },
+      "codeRepository": "https://github.com/SebSilent/HeartopiaMPPaint"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://sebsilent.github.io/HeartopiaMPPaint/#site",
+      "url": "https://sebsilent.github.io/HeartopiaMPPaint/",
+      "name": "Heartopia Painting Tool",
+      "publisher": { "@id": "https://sebsilent.github.io/HeartopiaMPPaint/#app" }
+    },
+    {
+      "@type": "FAQPage",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "Is the Heartopia painting tool free?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. It is free and MIT licensed, with no account, no login, no ads and no paid tier. The whole source is on GitHub."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Can I paint Heartopia designs with other people at the same time?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Yes. Pick a nickname, get an eight-character room code and send it to people. Everyone paints the same board live, with real-time cursors and a chip showing the shade each player is holding. Rooms are serverless peer-to-peer by default, so no installation or hosting is needed."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Will my design match the colours in Heartopia?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "Only the game's 125 real shades are selectable, mapped by perceptual colour distance (CIE DE2000). There is no free RGB picker, so a design cannot use a colour the game does not have. The PNG exports at one pixel per cell with smoothing off."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Does it support clothing and furniture, or only canvases?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "All of them: 20 canvas boards at the game's exact dimensions, 11 clothing items, 10 furniture items and the book - 50 faces in total, each at its real in-game size. Clothing items can also be previewed on their own 3D fabric mesh."
+          }
+        },
+        {
+          "@type": "Question",
+          "name": "Do I need to install anything?",
+          "acceptedAnswer": {
+            "@type": "Answer",
+            "text": "No. It runs in the browser on phone, tablet and desktop. On a phone, Add to Home Screen makes it behave like an app. Use ?local=1 for a board that never touches the network."
+          }
+        }
+      ]
+    }
+  ]
+}
+</script>
 
 <script>
   /* One place to point the site at your own relay server.
@@ -38,8 +180,8 @@
   <div class="join-wrap">
     <div id="joinCard" class="card join-card notch">
       <header class="card-head">
-        <h1>Heartopia <span>multiplayer paint</span></h1>
-        <p class="sub">One shared design, painted at the same time by everyone in the room. Pick a name and you are on it.</p>
+        <h1>Heartopia <span>painting tool</span></h1>
+        <p class="sub">A multiplayer pixel art studio for Heartopia custom designs. One shared board, painted at the same time by everyone in the room. Pick a name and you are on it.</p>
       </header>
 
       <div class="field">

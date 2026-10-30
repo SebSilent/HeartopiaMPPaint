@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="90" height="20" role="img" aria-label="build: none">
+<title>build: none</title>
+<rect width="90" height="20" rx="3" fill="#40b678"/>
+<rect width="48" height="20" rx="3" fill="#3d342e"/>
+<rect x="48" width="42" height="20" fill="#40b678"/>
+<text x="24" y="14.5" fill="#f7f2ea" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">build</text>
+<text x="69" y="14.5" fill="#221b17" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">none</text>
+</svg>

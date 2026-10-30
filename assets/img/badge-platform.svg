@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="155" height="20" role="img" aria-label="platform: any browser">
+<title>platform: any browser</title>
+<rect width="155" height="20" rx="3" fill="#055ea6"/>
+<rect width="68" height="20" rx="3" fill="#3d342e"/>
+<rect x="68" width="87" height="20" fill="#055ea6"/>
+<text x="34" y="14.5" fill="#f7f2ea" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">platform</text>
+<text x="111.5" y="14.5" fill="#f7f2ea" text-anchor="middle" font-family="Verdana,Geneva,DejaVu Sans,sans-serif" font-size="11">any browser</text>
+</svg>

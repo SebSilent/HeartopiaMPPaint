@@ -287,6 +287,14 @@ const actions = {
   },
   refreshTrace: () => refreshTrace(),
   tickBlock: () => {
+    // Ticks are only drawn in block mode, so ticking with the blueprint off
+    // would change shared room state nobody can see - and it is shared, so one
+    // stray keystroke would tick a corner off for everyone in the room. Both the
+    // panel button and the `.` key come through here, so the guard lives here.
+    if (blueprint.mode !== 'block') {
+      ui.toast('Block mode is off - pick a block size in the Blueprint panel first', 'info', 2200);
+      return;
+    }
     if (!blueprint.toggleLast()) {
       ui.toast('Nothing painted on this face to tick yet', 'info', 1600);
       return;
@@ -1518,6 +1526,10 @@ function bindKeys() {
         return actions.setGridVisible(state.showGrid);
       }
       if (k === 'v') return ui.togglePanel('tracePanel');
+      // The Blueprint panel's button has advertised this key since it shipped;
+      // it was never bound. tickBlock() refuses when block mode is off, so this
+      // cannot tick anything invisible.
+      if (k === '.') return actions.tickBlock();
       if (k === '0') return actions.fit();
       if (k === '=' || k === '+') return actions.zoom(1.25);
       if (k === '-') return actions.zoom(1 / 1.25);

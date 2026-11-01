@@ -16,6 +16,7 @@ import { StrokeDisplay } from './net/display.js';
 import { UI, cleanNick, validateNick, groupForIndex } from './ui.js';
 import { FLAT_COLORS, HEARTOPIA_GROUPS } from './data/heartopia-palette.js';
 import { stampFromFile, stampFromDataUrl, stampPreview } from './game/stamps.js';
+import { buildSheet, drawSheet, cellGrid } from './game/sheet.js';
 import { BRUSH_SIZES, DEFAULTS, LEVELS } from './presets.js';
 import { makeRoomCode, normalizeRoomCode, detectDevice, clamp, b64ToBytes } from './util.js';
 import {
@@ -248,6 +249,7 @@ const actions = {
   },
   copyInvite: () => copyInvite(),
   exportPNG: () => exportPNG(),
+  exportSheet: () => exportSheet(),
   /**
    * Copy the face you are looking at, as a text grid.
    *
@@ -1264,41 +1266,8 @@ function fallbackCopy(text, done) {
   ta.remove();
 }
 
-/**
- * The cell grid, for printing a face out and tracing it.
- *
- * Opt-in and off by default, because the export's whole job is to be the thing
- * the game reads, and a grid is not that.
- *
- * The half-pixel offsets are the point: a 1px stroke centred on an integer
- * coordinate lands across two device pixels and prints as a grey smear, which on
- * a board you are trying to read cell-by-cell is worse than no grid at all.
- * Every tenth line is stronger so you can find your place on a 102 x 154 face
- * without counting cells from the edge.
- */
-function drawCellGrid(ctx, x, y, cols, rows, cell) {
-  const x0 = Math.round(x);
-  const y0 = Math.round(y);
-  const wpx = cols * cell;
-  const hpx = rows * cell;
-  ctx.save();
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= cols; i++) {
-    ctx.strokeStyle = i % 10 === 0 ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.18)';
-    ctx.beginPath();
-    ctx.moveTo(x0 + i * cell + 0.5, y0 + 0.5);
-    ctx.lineTo(x0 + i * cell + 0.5, y0 + hpx + 0.5);
-    ctx.stroke();
-  }
-  for (let j = 0; j <= rows; j++) {
-    ctx.strokeStyle = j % 10 === 0 ? 'rgba(0,0,0,0.5)' : 'rgba(0,0,0,0.18)';
-    ctx.beginPath();
-    ctx.moveTo(x0 + 0.5, y0 + j * cell + 0.5);
-    ctx.lineTo(x0 + wpx + 0.5, y0 + j * cell + 0.5);
-    ctx.stroke();
-  }
-  ctx.restore();
-}
+// The cell grid lives in game/sheet.js now, shared with the reference sheet. It
+// used to be a private helper here, and the sheet needed the same lines.
 
 /**
  * Export every face, each at exactly one pixel per cell - which is what the
@@ -1334,7 +1303,7 @@ function exportPNG() {
     g.fillRGBA(new Uint32Array(img.data.buffer));
     octx.putImageData(img, 0, 0);
     ctx.drawImage(off, x, gap + label, g.w * cell, g.h * cell);
-    if (state.exportGrid) drawCellGrid(ctx, x, gap + label, g.w, g.h, cell);
+    if (state.exportGrid) cellGrid(ctx, x, gap + label, g.w, g.h, cell);
     ctx.fillStyle = '#3a2a1c';
     ctx.font = `${Math.max(11, Math.min(15, cell * 4))}px "Baloo 2", system-ui, sans-serif`;
     ctx.fillText(`${meta[i].label} ${g.w}×${g.h}`, x, gap + label - 5);
@@ -1345,6 +1314,36 @@ function exportPNG() {
   a.href = c.toDataURL('image/png');
   a.click();
   ui.toast(faces.length > 1 ? `Saved ${faces.length} faces as PNG` : 'Saved as PNG', 'good', 1800);
+}
+
+/**
+ * The reference sheet: this design as a worksheet for keying into the game.
+ *
+ * The PNG above is what the game reads. This is what a person reads: every face
+ * at a printable scale with a coordinate ruler on two edges, and one legend of
+ * only the shades actually in use with how many cells each one is. The count in
+ * the toast is the point - it is the number of jobs on the page, and it says
+ * "nothing painted yet" rather than presenting an empty sheet as a finished one.
+ */
+function exportSheet() {
+  if (!room) return;
+  const faces = room.design.faces;
+  const meta = room.design.item.faces;
+  const sheet = buildSheet(
+    faces.map((f) => ({ w: f.w, h: f.h, grid: f })),
+    meta,
+    { grid: state.exportGrid }
+  );
+  const c = document.createElement('canvas');
+  c.width = sheet.layout.width;
+  c.height = sheet.layout.height;
+  drawSheet(c.getContext('2d'), sheet);
+  const a = document.createElement('a');
+  a.download = `heartopia-sheet-${room.design.id}-${room.code}-${new Date().toISOString().slice(0, 10)}.png`;
+  a.href = c.toDataURL('image/png');
+  a.click();
+  const cells = faces.reduce((n, f) => n + f.usedCount(), 0);
+  ui.toast(sheet.shades.length ? `Sheet: ${sheet.shades.length} shades, ${cells} cells` : 'Sheet: nothing painted yet', 'good', 2200);
 }
 
 /**

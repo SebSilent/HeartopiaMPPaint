@@ -704,6 +704,7 @@ export class UI {
       this.actions.setGridVisible(this.state.showGrid);
     });
     document.getElementById('btnSave').addEventListener('click', () => this.actions.exportPNG());
+    document.getElementById('btnSheet').addEventListener('click', () => this.actions.exportSheet());
     document.getElementById('btnClear').addEventListener('click', () => this.actions.clearBoard());
     document.getElementById('btnDesign').addEventListener('click', () => this.openDesignDialog());
     document.getElementById('btnImport').addEventListener('click', () => this.togglePanel('importPanel'));

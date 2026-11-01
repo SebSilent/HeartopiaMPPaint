@@ -4,9 +4,9 @@
  * A Heartopia board is keyed into the game one cell at a time, by hand, with
  * the game's own pen. So the useful output of a design is not only a picture,
  * it is a *worksheet*: which shades are in use, how many cells each one is,
- * and how far along you are. Art-pia built their whole business on that and
- * charge for it; here it is a toggle, because we are the version where several
- * people can do the keying-in at once.
+ * and how far along you are. Here it is a toggle rather than a paid product,
+ * because the point of this version is that several people can do the
+ * keying-in at once.
  *
  * Two work modes, exactly as the game needs them:
  *

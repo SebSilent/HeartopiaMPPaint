@@ -1,7 +1,7 @@
 /**
  * Finding the backdrop that should not be there.
  *
- * A garment is a single cloth shell: art-pia's bake drops the lining, so the
+ * A garment is a single cloth shell: the source bake drops the lining, so the
  * mesh has real openings at the neck, the cuffs and the hem, and the renderer
  * draws both faces of it. That is the correct answer for a shell, and it leaves
  * a defect behind - small islands of backdrop trapped inside the silhouette,

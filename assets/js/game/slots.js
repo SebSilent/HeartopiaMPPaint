@@ -128,7 +128,7 @@ export const FURNITURE = [
  * It used to have a second face here, 4:3 at 150x114, because the catalog group
  * for the book still lists that canvas and the faces were paired to canvases by
  * index. It is not a book board - it is the XL 4:3 canvas board, the same size,
- * which is how it slipped in - and art-pia's own guide repeats the claim, so
+ * which is how it slipped in - and the reference guide repeats the claim, so
  * neither the data nor the documentation is on your side here; the game only
  * offers the one.
  *

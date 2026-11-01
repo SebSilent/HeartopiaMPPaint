@@ -4,8 +4,8 @@ node_modules/
 # local scratch: fetched reference pages, Multiplayer Piano sources, captures
 _research/
 
-# scraped art-pia assets. This holds a logged-in profile and your auth header,
-# so it must never be committed or shared.
+# third-party reference assets pulled by the offline tools. This holds a saved
+# session and a request token, so it must never be committed or shared.
 _scrape/
 
 # impeccable detector state

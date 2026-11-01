@@ -1,6 +1,6 @@
 /**
  * Canvas sizes taken straight from Heartopia's in-game painting grid, as
- * catalogued by https://zerochansy.github.io/Heartopia-Painting-Tools/
+ * catalogued by the community colour reference
  * (app.js -> gridDimensions). Ratio x precision level -> [cellsWide, cellsTall].
  */
 

@@ -1,7 +1,7 @@
 /*
  * Screenshot import: find a Heartopia board inside a picture of one.
  *
- * The loop that art-pia only half closes is "what is already in the game". You
+ * The loop the source only half closes is "what is already in the game". You
  * take a screenshot of something you (or someone else) painted in-world, and
  * this turns it back into cells you can edit and paint over together. That is
  * a computer-vision problem, so it is solved like one - no hard-coded

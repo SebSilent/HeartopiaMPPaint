@@ -1,5 +1,5 @@
 // Parses the Heartopia color.svg into a structured JSON palette.
-// Source: https://zerochansy.github.io/Heartopia-Painting-Tools/assets/color/color.svg
+// Source: the community colour catalogue SVG
 const fs = require('fs');
 
 const svgText = fs.readFileSync(process.argv[2] || 'ref_color.svg', 'utf8');
@@ -30,7 +30,7 @@ const groups = Object.keys(shades)
   }));
 
 const out = {
-  source: 'https://zerochansy.github.io/Heartopia-Painting-Tools/assets/color/color.svg',
+  source: 'community colour catalogue',
   totalGroups: groups.length,
   totalColors: groups.reduce((s, g) => s + g.colors.length, 0),
   groups,

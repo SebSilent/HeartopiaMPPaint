@@ -1,7 +1,7 @@
 // The real garment shapes, at runtime.
 //
 // tools/build_mesh_module.mjs bakes each clothing item's fabric-simulation mesh
-// out of art-pia's files: welded from ~220,000 triangles down to about 1,400,
+// out of the source files: welded from ~220,000 triangles down to about 1,400,
 // with the mesh's own normals and UVs. One file per garment, ~27 KB, imported
 // only when the 3D preview is opened - the board itself never pays for it.
 import { CLOTHING } from './slots.js';

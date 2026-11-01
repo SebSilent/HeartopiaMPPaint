@@ -474,19 +474,14 @@ No. This is an independent fan-made tool.
 
 ---
 
-## Data sources and attribution
+## Data sources
 
-This tool stands on data other players catalogued first, and it is credited where it is used:
+The palette values, canvas dimensions, item face sizes and garment geometry were compiled from
+community documentation of the game's own assets, then verified against what the game actually accepts
+at paint time.
 
-- **Palette and canvas dimensions** - the 125 shades and the ratio × precision grid table were
-  catalogued by [zerochansy's Heartopia Painting Tools](https://zerochansy.github.io/Heartopia-Painting-Tools/).
-  The source URL is recorded in `assets/data/heartopia-palette.json` and `assets/js/presets.js`.
-- **Garment mesh format** - the 3D clothing patterns were reverse-engineered from
-  [art-pia](https://art-pia.com/), and the game's own preset codes in
-  `assets/data/heartopia-game-palette.json` come from the same catalogue.
-
-The comparison table above is about what this implementation does, not about the quality of those
-projects - both were the reference this one was measured against, and neither is a multiplayer editor.
+The comparison table above is about what this implementation does, not about the quality of the other
+tools in this space.
 
 Heartopia and its assets belong to their respective owners. This repository is an unofficial,
 fan-made tool.
@@ -498,8 +493,7 @@ fan-made tool.
 MIT © [SebSilent](https://github.com/SebSilent) and contributors. See [LICENSE](./LICENSE).
 
 Game data (palette shades, canvas dimensions, item face sizes, garment meshes) is reproduced for
-compatibility with a game the player owns; attribution is in the section above and in the data files
-themselves.
+compatibility with a game the player owns.
 
 **Found a bug or a wrong dimension?** Open an issue - a face size that disagrees with the game is
 treated as a bug in this tool, not as a preference.

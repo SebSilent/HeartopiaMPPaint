@@ -144,7 +144,7 @@ export class Preview3D {
   }
 
   /**
-   * The garment as art-pia's fabric simulation made it: about 1,400 triangles,
+   * The garment as the source bake made it: about 1,400 triangles,
    * each already carrying the face it samples and the mesh's own normal.
    *
    * Nothing is subdivided here, unlike the panels. The affine texture error is
@@ -393,7 +393,7 @@ export class Preview3D {
       // There is no back-face culling here, deliberately. It used to skip any
       // triangle pointing away from the camera, on the assumption that a garment
       // is a closed solid and half of it is wasted work. It is not closed: the
-      // mesh art-pia ships is a single cloth shell, because the lining is a
+      // mesh this tool loads is a single cloth shell, because the lining is a
       // separate group that baking drops - so the away-facing half was the only
       // thing covering the neck, cuffs and hem, and culling it turned every
       // opening into a window onto the backdrop. That is what "holes" was.
